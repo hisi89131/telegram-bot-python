@@ -7,11 +7,11 @@ import pytz
 
 # ================= CONFIG =================
 
-BOT_TOKEN = "8531299371:AAFqq8eMSx4u6F9dLCEAj63E-weBGnRxKRk"
+BOT_TOKEN = "8531299371:AAH7_G-XPVFWal4lDITS04aUC_8gVehc2MA"
 MAIN_ADMIN = 1086634832
 MAIN_CHANNEL = "@loader0fficial"
 
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 
 # ================= DATABASE =================
 
@@ -36,7 +36,6 @@ cur.execute("""CREATE TABLE IF NOT EXISTS support_map(
 )""")
 
 conn.commit()
-
 cur.execute("INSERT OR IGNORE INTO admins VALUES(?)", (str(MAIN_ADMIN),))
 conn.commit()
 
@@ -70,7 +69,6 @@ def check_join(user_id):
     groups = [MAIN_CHANNEL]
     cur.execute("SELECT chat_id FROM force_groups")
     groups += [g[0] for g in cur.fetchall()]
-
     for g in groups:
         try:
             status = bot.get_chat_member(g, int(user_id)).status
@@ -99,7 +97,8 @@ def start(message):
     register_user(message.from_user)
 
     if not check_join(uid):
-        bot.send_message(message.chat.id, "Join required channel",
+        bot.send_message(message.chat.id,
+                         "Please join required channel",
                          reply_markup=join_markup())
         return
 
@@ -107,26 +106,26 @@ def start(message):
 
 # ================= VERIFY =================
 
-@bot.callback_query_handler(func=lambda c: c.data=="verify")
+@bot.callback_query_handler(func=lambda c: c.data == "verify")
 def verify(call):
     if check_join(call.from_user.id):
         bot.edit_message_text("Verified ✅\nUse /cmd",
                               call.message.chat.id,
                               call.message.message_id)
     else:
-        bot.answer_callback_query(call.id,"Join first")
+        bot.answer_callback_query(call.id, "Join first")
 
 # ================= CMD =================
 
 @bot.message_handler(commands=["cmd"])
 def cmd(message):
-    uid=str(message.from_user.id)
+    uid = str(message.from_user.id)
 
     if is_banned(uid):
         return
 
     if is_admin(uid):
-        text="""Admin Commands:
+        text = """Admin Commands:
 
 /set name
 /done
@@ -142,18 +141,19 @@ def cmd(message):
 /cmd"""
     else:
         if not check_join(uid):
-            bot.send_message(message.chat.id,"Join channel first",
+            bot.send_message(message.chat.id,
+                             "Join required channel",
                              reply_markup=join_markup())
             return
 
         cur.execute("SELECT name FROM commands")
         cmds = cur.fetchall()
-        text="Available Commands:\n\n"
+        text = "Available Commands:\n\n"
         for c in cmds:
-            text+=f"/{c[0]}\n"
-        text+="\n/support message\n/cmd"
+            text += f"/{c[0]}\n"
+        text += "\n/support message\n/cmd"
 
-    bot.send_message(message.chat.id,text)
+    bot.send_message(message.chat.id, text)
 
 # ================= SET =================
 
@@ -161,11 +161,12 @@ current_set = {}
 
 @bot.message_handler(commands=["set"])
 def set_command(message):
-    if not is_admin(str(message.from_user.id)):
+    uid = str(message.from_user.id)
+    if not is_admin(uid):
         return
     try:
-        name=message.text.split()[1]
-        current_set[str(message.from_user.id)]=name
+        name = message.text.split()[1]
+        current_set[uid] = name
         cur.execute("INSERT OR REPLACE INTO commands VALUES(?,?)",(name,""))
         cur.execute("DELETE FROM files WHERE command_name=?",(name,))
         conn.commit()
@@ -176,41 +177,45 @@ def set_command(message):
 # ================= FILE SAVE =================
 
 @bot.message_handler(content_types=["document","photo","video","audio"])
-def save_files(message):
-    uid=str(message.from_user.id)
-
+def save_file(message):
+    uid = str(message.from_user.id)
     if uid not in current_set:
         return
 
-    cmd=current_set[uid]
+    cmd = current_set[uid]
 
-    file_id=None
     if message.document:
-        file_id=message.document.file_id
+        file_id = message.document.file_id
+        file_type = "document"
     elif message.photo:
-        file_id=message.photo[-1].file_id
+        file_id = message.photo[-1].file_id
+        file_type = "photo"
     elif message.video:
-        file_id=message.video.file_id
+        file_id = message.video.file_id
+        file_type = "video"
     elif message.audio:
-        file_id=message.audio.file_id
+        file_id = message.audio.file_id
+        file_type = "audio"
+    else:
+        return
 
-    caption=clean_caption(message.caption)
+    caption = clean_caption(message.caption)
 
-    cur.execute("INSERT INTO files(command_name,file_id,file_type,caption) VALUES(?,?,?,?)",
-                (cmd,file_id,message.content_type,caption))
+    cur.execute("""INSERT INTO files(command_name,file_id,file_type,caption)
+                   VALUES(?,?,?,?)""",
+                (cmd,file_id,file_type,caption))
     conn.commit()
 
 # ================= DONE =================
 
 @bot.message_handler(commands=["done"])
 def done(message):
-    uid=str(message.from_user.id)
-
+    uid = str(message.from_user.id)
     if uid not in current_set:
         return
 
-    cmd=current_set[uid]
-    upload_time=ist_time()
+    cmd = current_set[uid]
+    upload_time = ist_time()
 
     cur.execute("UPDATE commands SET upload_time=? WHERE name=?",
                 (upload_time,cmd))
@@ -219,11 +224,11 @@ def done(message):
     del current_set[uid]
 
     cur.execute("SELECT user_id FROM users")
-    users=cur.fetchall()
+    users = cur.fetchall()
 
     for u in users:
         try:
-            bot.send_message(u[0],f"Updated 🔔\nUse /{cmd}")
+            bot.send_message(u[0], f"Updated 🔔\nUse /{cmd}")
         except:
             pass
 
@@ -232,12 +237,13 @@ def done(message):
 # ================= EDIT =================
 
 @bot.message_handler(commands=["edit"])
-def edit_cmd(message):
-    if not is_admin(str(message.from_user.id)):
+def edit_command(message):
+    uid = str(message.from_user.id)
+    if not is_admin(uid):
         return
     try:
-        name=message.text.split()[1]
-        current_set[str(message.from_user.id)]=name
+        name = message.text.split()[1]
+        current_set[uid] = name
         cur.execute("DELETE FROM files WHERE command_name=?",(name,))
         conn.commit()
         bot.send_message(message.chat.id,"Send new files then /done")
@@ -248,10 +254,11 @@ def edit_cmd(message):
 
 @bot.message_handler(commands=["deletecmd"])
 def delete_cmd(message):
-    if not is_admin(str(message.from_user.id)):
+    uid = str(message.from_user.id)
+    if not is_admin(uid):
         return
     try:
-        name=message.text.split()[1]
+        name = message.text.split()[1]
         cur.execute("DELETE FROM commands WHERE name=?",(name,))
         cur.execute("DELETE FROM files WHERE command_name=?",(name,))
         conn.commit()
@@ -259,38 +266,73 @@ def delete_cmd(message):
     except:
         bot.send_message(message.chat.id,"Usage: /deletecmd name")
 
-# ================= DYNAMIC COMMAND =================
+# ================= SUPPORT =================
 
-@bot.message_handler(func=lambda m: m.text and m.text.startswith("/"))
-def dynamic(message):
-    uid=str(message.from_user.id)
-
+@bot.message_handler(commands=["support"])
+def support(message):
+    uid = str(message.from_user.id)
     if is_banned(uid):
         return
 
-    cmd=message.text[1:]
+    text = message.text.replace("/support","").strip()
+    if not text:
+        bot.send_message(message.chat.id,"Usage: /support message")
+        return
 
-    built_in=["start","cmd","set","done","edit","deletecmd",
-              "ban","unban","banlist","userlist",
-              "addforce","delforce","support"]
+    sent = bot.send_message(
+        MAIN_ADMIN,
+        f"Support Request\n\nUser: {uid}\n\n{text}\n\nReply to respond."
+    )
 
-    if cmd in built_in:
+    cur.execute("INSERT OR REPLACE INTO support_map VALUES(?,?)",
+                (str(sent.message_id), uid))
+    conn.commit()
+
+    bot.send_message(message.chat.id,"Message sent to admin")
+
+@bot.message_handler(func=lambda m: m.reply_to_message is not None)
+def reply_support(message):
+    if not is_admin(str(message.from_user.id)):
+        return
+
+    reply_id = str(message.reply_to_message.message_id)
+    cur.execute("SELECT user_id FROM support_map WHERE admin_msg_id=?",
+                (reply_id,))
+    row = cur.fetchone()
+    if row:
+        bot.send_message(row[0], f"Admin Reply:\n\n{message.text}")
+
+# ================= DYNAMIC =================
+
+@bot.message_handler(func=lambda m: m.text and m.text.startswith("/"))
+def dynamic_command(message):
+    uid = str(message.from_user.id)
+    if is_banned(uid):
+        return
+
+    cmd = message.text[1:]
+    builtins = ["start","cmd","set","done","edit","deletecmd",
+                "ban","unban","banlist","userlist",
+                "addforce","delforce","support"]
+
+    if cmd in builtins:
         return
 
     if not check_join(uid):
-        bot.send_message(message.chat.id,"Join channel first",
+        bot.send_message(message.chat.id,
+                         "Join required channel",
                          reply_markup=join_markup())
         return
 
     cur.execute("SELECT upload_time FROM commands WHERE name=?",(cmd,))
-    row=cur.fetchone()
+    row = cur.fetchone()
     if not row:
         return
 
-    upload_time=row[0]
+    upload_time = row[0]
 
     cur.execute("SELECT file_id,file_type,caption FROM files WHERE command_name=?",(cmd,))
-    files=cur.fetchall()
+    files = cur.fetchall()
 
     for f in files:
         if f[1]=="document":
@@ -303,40 +345,6 @@ def dynamic(message):
             bot.send_audio(message.chat.id,f[0],caption=f[2])
 
     bot.send_message(message.chat.id,f"Uploaded: {upload_time}")
-
-# ================= SUPPORT =================
-
-@bot.message_handler(commands=["support"])
-def support(message):
-    uid=str(message.from_user.id)
-
-    if is_banned(uid):
-        return
-
-    text=message.text.replace("/support","").strip()
-    if not text:
-        bot.send_message(message.chat.id,"Usage: /support message")
-        return
-
-    sent=bot.send_message(MAIN_ADMIN,f"Support from {uid}\n\n{text}")
-
-    cur.execute("INSERT OR REPLACE INTO support_map VALUES(?,?)",
-                (str(sent.message_id),uid))
-    conn.commit()
-
-    bot.send_message(message.chat.id,"Message sent to admin")
-
-@bot.message_handler(func=lambda m: m.reply_to_message)
-def reply_support(message):
-    if not is_admin(str(message.from_user.id)):
-        return
-
-    reply_id=str(message.reply_to_message.message_id)
-    cur.execute("SELECT user_id FROM support_map WHERE admin_msg_id=?",
-                (reply_id,))
-    row=cur.fetchone()
-    if row:
-        bot.send_message(row[0],f"Admin Reply:\n\n{message.text}")
 
 # ================= RUN =================
 
