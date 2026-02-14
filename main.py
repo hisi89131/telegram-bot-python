@@ -5,7 +5,7 @@ import re
 import time
 from datetime import datetime
 
-TOKEN = "8163746024:AAGQ9ARweqJl1sftXszz2WtG5F14l3kccJA"
+TOKEN = "8163746024:AAHOoGxMwdHHndWckUpKufugagdUkaDlfXI"
 
 MAIN_ADMIN = 1086634832
 FORCE_GROUP = "@loader0fficial"
