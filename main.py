@@ -2,7 +2,7 @@ import telebot
 import re
 import time
 
-TOKEN = "8310389267:AAFhrYCABb2u6iVWY2GzyzYk6rv8JmRyTa4"
+TOKEN = "8310389267:AAHhlEvDc5ECKNtiltVG1a_Zd1d7FVVgnj0"
 ADMIN_ID = 1086634832  # <-- अपना Telegram user id डालना
 
 bot = telebot.TeleBot(TOKEN)
