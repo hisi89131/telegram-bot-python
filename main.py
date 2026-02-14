@@ -3,10 +3,13 @@ import re
 import time
 
 TOKEN = "8310389267:AAGdedMdP9wHAg-jy0XE9BU9Phqn8i8n8i8"
-
 bot = telebot.TeleBot(TOKEN)
 
 bot.remove_webhook()
+
+@bot.message_handler(commands=['start'])
+def start_command(message):
+    bot.reply_to(message, "Bot is working ✅")
 
 def clean_text(text):
     if not text:
@@ -20,7 +23,6 @@ def clean_text(text):
     'audio', 'voice', 'animation'
 ])
 def handle_files(message):
-
     cleaned_caption = clean_text(message.caption)
 
     bot.copy_message(
