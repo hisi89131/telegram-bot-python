@@ -2,7 +2,7 @@ import telebot
 import re
 import time
 
-TOKEN = "8310389267:AAGdedMdP9wHAg-jy0XE9BU9Phqn8i8n8i8"
+TOKEN = "8310389267:AAFhrYCABb2u6iVWY2GzyzYk6rv8JmRyTa4"
 bot = telebot.TeleBot(TOKEN)
 
 bot.remove_webhook()
