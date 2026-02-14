@@ -1,105 +1,187 @@
 import telebot
-import os
 import json
+import os
 import re
-import time
 from datetime import datetime
 
-TOKEN = "8163746024:AAHOoGxMwdHHndWckUpKufugagdUkaDlfXI"
-
-MAIN_ADMIN = 1086634832
-FORCE_GROUP = "@loader0fficial"
+# ============ CONFIG ============
+TOKEN = "8163746024:AAGFfQbHgPtrdFmbG9KJN9BHJRhtnWVMj8E"
+OWNER_ID = 1086634832
+FORCE_JOIN = "@loader0fficial"
+DATA_FILE = "data.json"
+# =================================
 
 bot = telebot.TeleBot(TOKEN)
 
-# Files
-USERS = "users.json"
-ADMINS = "admins.json"
-BANNED = "banned.json"
-COMMANDS = "commands.json"
-WARNINGS = "warnings.json"
+# ---------- DATA ----------
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({
+            "admins": [OWNER_ID],
+            "banned": [],
+            "users": [],
+            "commands": {}
+        }, f)
 
-# ------------------ Utility ------------------
-
-def load(file):
-    if not os.path.exists(file):
-        return {}
-    with open(file, "r") as f:
+def load_data():
+    with open(DATA_FILE) as f:
         return json.load(f)
 
-def save(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f)
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
+# ---------- CHECKS ----------
+def is_admin(user_id):
+    data = load_data()
+    return user_id in data["admins"]
+
+def is_banned(user_id):
+    data = load_data()
+    return user_id in data["banned"]
+
+def force_join_check(user_id):
+    try:
+        member = bot.get_chat_member(FORCE_JOIN, user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except:
+        return False
+
+# ---------- START ----------
+@bot.message_handler(commands=["start"])
+def start(message):
+    user_id = message.from_user.id
+    data = load_data()
+
+    if is_banned(user_id):
+        return
+
+    if user_id not in data["users"]:
+        data["users"].append(user_id)
+        save_data(data)
+
+    if not force_join_check(user_id):
+        bot.reply_to(message,
+            f"⚠️ Please join our group first:\n{FORCE_JOIN}")
+        return
+
+    bot.reply_to(message, "✅ Bot is working!")
+
+# ---------- HELP ----------
+@bot.message_handler(commands=["help"])
+def help_cmd(message):
+    user_id = message.from_user.id
+
+    if is_admin(user_id):
+        bot.reply_to(message,
+            "👑 Admin Commands:\n"
+            "/broadcast - Send message to all\n"
+            "/ban <id>\n"
+            "/unban <id>\n"
+            "/admins\n"
+            "/users\n"
+            "/help")
+    else:
+        bot.reply_to(message,
+            "👤 User Commands:\n"
+            "/start\n"
+            "/help")
+
+# ---------- BROADCAST ----------
+@bot.message_handler(commands=["broadcast"])
+def broadcast(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    msg = message.text.replace("/broadcast ", "")
+    data = load_data()
+
+    for user in data["users"]:
+        try:
+            bot.send_message(user, msg)
+        except:
+            pass
+
+    bot.reply_to(message, "✅ Broadcast Sent")
+
+# ---------- BAN ----------
+@bot.message_handler(commands=["ban"])
+def ban_user(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        user_id = int(message.text.split()[1])
+        data = load_data()
+        if user_id not in data["banned"]:
+            data["banned"].append(user_id)
+            save_data(data)
+        bot.reply_to(message, "🚫 User Banned")
+    except:
+        bot.reply_to(message, "Usage: /ban user_id")
+
+# ---------- UNBAN ----------
+@bot.message_handler(commands=["unban"])
+def unban_user(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        user_id = int(message.text.split()[1])
+        data = load_data()
+        if user_id in data["banned"]:
+            data["banned"].remove(user_id)
+            save_data(data)
+        bot.reply_to(message, "✅ User Unbanned")
+    except:
+        bot.reply_to(message, "Usage: /unban user_id")
+
+# ---------- LIST ADMINS ----------
+@bot.message_handler(commands=["admins"])
+def list_admins(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    data = load_data()
+    text = "👑 Admin List:\n"
+    for admin in data["admins"]:
+        text += f"{admin} (admin)\n"
+    bot.reply_to(message, text)
+
+# ---------- LIST USERS ----------
+@bot.message_handler(commands=["users"])
+def list_users(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    data = load_data()
+    bot.reply_to(message, f"👥 Total Users: {len(data['users'])}")
+
+# ---------- CLEAN TEXT ----------
 def clean_text(text):
     if not text:
-        return None
+        return ""
     text = re.sub(r'https?://\S+', '', text)
     text = re.sub(r'@\w+', '', text)
     return text.strip()
 
-# ------------------ Start ------------------
-
-@bot.message_handler(commands=['start'])
-def start(msg):
-    banned = load(BANNED)
-    if str(msg.from_user.id) in banned:
+# ---------- FILE HANDLER ----------
+@bot.message_handler(content_types=["document", "video", "photo", "audio", "voice"])
+def handle_files(message):
+    if is_banned(message.from_user.id):
         return
 
-    users = load(USERS)
-    users[str(msg.from_user.id)] = msg.from_user.username
-    save(USERS, users)
+    caption = clean_text(message.caption)
+    bot.copy_message(
+        chat_id=message.chat.id,
+        from_chat_id=message.chat.id,
+        message_id=message.message_id,
+        caption=caption
+    )
 
-    bot.reply_to(msg, "Bot is working ✅")
-
-# ------------------ Help ------------------
-
-@bot.message_handler(commands=['help'])
-def help_user(msg):
-    text = """
-User Commands:
-
-/support <message>
-Use any created command name
-"""
-    bot.reply_to(msg, text)
-
-@bot.message_handler(commands=['adminhelp'])
-def help_admin(msg):
-    if msg.from_user.id != MAIN_ADMIN and str(msg.from_user.id) not in load(ADMINS):
-        return
-    text = """
-Admin Commands:
-
-/setcmd name
-/done
-/delcmd name
-/addadmin id
-/removeadmin id
-/adminlist
-/ban id
-/unban id
-/banlist
-/broadcast message
-/users
-"""
-    bot.reply_to(msg, text)
-
-# ------------------ Admin System ------------------
-
-@bot.message_handler(commands=['addadmin'])
-def addadmin(msg):
-    if msg.from_user.id != MAIN_ADMIN:
-        return
-    admin_id = msg.text.split()[1]
-    admins = load(ADMINS)
-    admins[admin_id] = "ADMIN"
-    save(ADMINS, admins)
-    bot.reply_to(msg, "Admin Added ✅")
-
-@bot.message_handler(commands=['removeadmin'])
-def removeadmin(msg):
-    if msg.from_user.id != MAIN_ADMIN:
+# ---------- RUN ----------
+print("Bot is running...")
+bot.infinity_polling()    if msg.from_user.id != MAIN_ADMIN:
         return
     admin_id = msg.text.split()[1]
     admins = load(ADMINS)
