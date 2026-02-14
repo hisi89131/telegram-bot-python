@@ -3,14 +3,12 @@ import re
 import time
 
 TOKEN = "8310389267:AAFhrYCABb2u6iVWY2GzyzYk6rv8JmRyTa4"
-bot = telebot.TeleBot(TOKEN)
+ADMIN_ID = 1086634832  # <-- अपना Telegram user id डालना
 
+bot = telebot.TeleBot(TOKEN)
 bot.remove_webhook()
 
-@bot.message_handler(commands=['start'])
-def start_command(message):
-    bot.reply_to(message, "Bot is working ✅")
-
+# ---------- TEXT CLEAN FUNCTION ----------
 def clean_text(text):
     if not text:
         return None
@@ -18,11 +16,26 @@ def clean_text(text):
     text = re.sub(r'@\w+', '', text)
     return text.strip()
 
+# ---------- START COMMAND ----------
+@bot.message_handler(commands=['start'])
+def start_command(message):
+    bot.reply_to(message, "Bot is working ✅")
+
+# ---------- HELP COMMAND ----------
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    bot.reply_to(message,
+        "/start - Check bot status\n"
+        "/help - Show commands\n"
+    )
+
+# ---------- FILE HANDLER ----------
 @bot.message_handler(content_types=[
     'document', 'video', 'photo',
     'audio', 'voice', 'animation'
 ])
 def handle_files(message):
+
     cleaned_caption = clean_text(message.caption)
 
     bot.copy_message(
