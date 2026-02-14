@@ -2,32 +2,33 @@ import telebot
 import json
 import os
 import re
-import pytz
 from datetime import datetime
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import pytz
 
-TOKEN = "8163746024:AAGuqYln0nMGtFqD8IS1OZGfD5t_RsmgXGk"
+# ================== CONFIG ==================
+
+BOT_TOKEN = "8163746024:AAE64JcAgTS25ZUBM5u9kOfF-Q7X4dh_Zxc"
 MAIN_ADMIN = 1086634832
 FORCE_CHANNEL = "@loader0fficial"
-GROUP_ID = "@loader0fficial"
 
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN)
 
 DATA_FILE = "data.json"
 
-# -------------------- LOAD DATA --------------------
-def load():
-    if not os.path.exists(DATA_FILE):
-        return {
+# ================== INIT DATA ==================
+
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({
             "users": {},
-            "admins": [MAIN_ADMIN],
             "banned": {},
+            "admins": [MAIN_ADMIN],
             "commands": {},
-            "set_mode": {},
-            "support_map": {},
-            "warnings": {}
-        }
-    with open(DATA_FILE, "r") as f:
+            "set_mode": None
+        }, f)
+
+def load():
+    with open(DATA_FILE) as f:
         return json.load(f)
 
 def save(data):
@@ -36,30 +37,32 @@ def save(data):
 
 data = load()
 
-# -------------------- FORCE JOIN CHECK --------------------
+# ================== TIME (IST) ==================
+
+def get_ist_time():
+    tz = pytz.timezone("Asia/Kolkata")
+    return datetime.now(tz).strftime("%d-%m-%Y %H:%M")
+
+# ================== FORCE JOIN ==================
+
 def is_joined(user_id):
     try:
-        member = bot.get_chat_member(FORCE_CHANNEL, user_id)
-        return member.status in ["member","administrator","creator"]
+        status = bot.get_chat_member(FORCE_CHANNEL, user_id).status
+        return status in ["member", "administrator", "creator"]
     except:
         return False
 
-def join_buttons():
-    markup = InlineKeyboardMarkup()
-    markup.add(
-        InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{FORCE_CHANNEL.replace('@','')}"),
-        InlineKeyboardButton("✅ Verify", callback_data="verify")
-    )
-    return markup
+# ================== CLEAN TEXT ==================
 
-@bot.callback_query_handler(func=lambda call: call.data=="verify")
-def verify(call):
-    if is_joined(call.from_user.id):
-        bot.edit_message_text("✅ Verified Successfully\nUse /help", call.message.chat.id, call.message.message_id)
-    else:
-        bot.answer_callback_query(call.id, "Join channel first!", show_alert=True)
+def clean_text(text):
+    if not text:
+        return None
+    text = re.sub(r"http\S+", "", text)
+    text = re.sub(r"@\w+", "", text)
+    return text.strip()
 
-# -------------------- START --------------------
+# ================== START ==================
+
 @bot.message_handler(commands=["start"])
 def start(message):
     uid = str(message.from_user.id)
@@ -67,179 +70,203 @@ def start(message):
     if uid in data["banned"]:
         return
 
-    data["users"][uid] = message.from_user.username
-    save(data)
+    if uid not in data["users"]:
+        data["users"][uid] = message.from_user.username
+        save(data)
 
     if not is_joined(message.from_user.id):
-        bot.send_message(message.chat.id,"⚠ Join Channel First", reply_markup=join_buttons())
+        bot.send_message(message.chat.id, "⚠️ Join Channel First Then /start")
         return
 
-    bot.send_message(message.chat.id,"✅ Verified Successfully\nUse /help")
+    bot.send_message(message.chat.id, "✅ Verified Successfully\nUse /cmd")
 
-# -------------------- HELP --------------------
-@bot.message_handler(commands=["help"])
-def help_cmd(message):
-    if message.from_user.id in data["admins"]:
-        bot.send_message(message.chat.id,
-        "👑 Admin Commands:\n"
-        "/set command\n"
-        "/done\n"
-        "/broadcast text\n"
-        "/ban id\n"
-        "/unban id\n"
-        "/users\n"
-        "/banlist\n"
-        "/admins\n"
-        "/support reply")
-    else:
-        bot.send_message(message.chat.id,"📌 Use custom command like /loader1")
+# ================== CMD ==================
 
-# -------------------- SET COMMAND --------------------
-@bot.message_handler(commands=["set"])
-def set_command(message):
-    if message.from_user.id not in data["admins"]:
-        return
-    try:
-        cmd = message.text.split()[1]
-        data["set_mode"][str(message.from_user.id)] = cmd
-        data["commands"][cmd] = []
-        save(data)
-        bot.send_message(message.chat.id,"Send files now then /done")
-    except:
-        bot.send_message(message.chat.id,"Usage: /set commandname")
-
-# -------------------- CAPTURE FILES --------------------
-@bot.message_handler(content_types=["document","photo","video","text"])
-def capture(message):
+@bot.message_handler(commands=["cmd"])
+def cmd(message):
     uid = str(message.from_user.id)
-
-    # Spam filter
-    bad_words = ["madarchod","gali","spam"]
-    if any(word in message.text.lower() for word in bad_words if message.text):
-        warn = data["warnings"].get(uid,0)+1
-        data["warnings"][uid]=warn
-        save(data)
-        bot.delete_message(message.chat.id,message.message_id)
-        if warn>=2:
-            data["banned"][uid]=True
-            save(data)
-            bot.send_message(MAIN_ADMIN,f"User {uid} auto banned")
-        return
-
-    if uid in data["set_mode"]:
-        cmd = data["set_mode"][uid]
-
-        caption = message.caption or message.text or ""
-        caption = re.sub(r'@\w+','',caption)
-        caption = re.sub(r'http\S+','',caption)
-
-        ist = pytz.timezone("Asia/Kolkata")
-        now = datetime.now(ist).strftime("%d-%m-%Y %H:%M")
-
-        data["commands"][cmd].append({
-            "file_id": message.document.file_id if message.document else None,
-            "caption": caption,
-            "time": now
-        })
-        save(data)
-
-# -------------------- DONE --------------------
-@bot.message_handler(commands=["done"])
-def done(message):
-    uid = str(message.from_user.id)
-    if uid not in data["set_mode"]:
-        return
-    cmd = data["set_mode"][uid]
-    del data["set_mode"][uid]
-    save(data)
-
-    # Broadcast
-    for user in data["users"]:
-        try:
-            bot.send_message(user,f"🔔 Key Updated\nUse /{cmd}")
-        except:
-            pass
-
-    bot.send_message(GROUP_ID,f"🔔 Key Updated\n@{bot.get_me().username}")
-    bot.send_message(message.chat.id,"Command Saved & Broadcasted")
-
-# -------------------- CUSTOM COMMAND HANDLER --------------------
-@bot.message_handler(func=lambda m: m.text and m.text.startswith("/"))
-def custom(m):
-    cmd = m.text.replace("/","")
-    uid = str(m.from_user.id)
 
     if uid in data["banned"]:
         return
 
-    if not is_joined(m.from_user.id):
-        bot.send_message(m.chat.id,"⚠ Join Channel First", reply_markup=join_buttons())
-        return
+    if message.from_user.id in data["admins"]:
+        text = """👑 Admin Commands:
 
-    if cmd in data["commands"]:
-        for item in data["commands"][cmd]:
-            bot.send_document(m.chat.id,item["file_id"],caption=item["caption"])
-            bot.send_message(m.chat.id,f"📅 Uploaded: {item['time']}")
+/set command
+/done
+/ban user_id
+/unban user_id
+/banlist
+/userlist
+/cmd"""
+        bot.send_message(message.chat.id, text)
+    else:
+        if not is_joined(message.from_user.id):
+            bot.send_message(message.chat.id, "⚠️ Join Channel First")
+            return
 
-# -------------------- USERS --------------------
-@bot.message_handler(commands=["users"])
-def users(message):
+        text = "📦 Available Commands:\n\n"
+        for c in data["commands"]:
+            text += f"/{c}\n"
+
+        text += "\n/cmd"
+        bot.send_message(message.chat.id, text)
+
+# ================== SET ==================
+
+@bot.message_handler(commands=["set"])
+def set_cmd(message):
     if message.from_user.id not in data["admins"]:
         return
-    txt="Total Users:\n"
-    for u in data["users"]:
-        txt+=f"{u} @{data['users'][u]}\n"
-    bot.send_message(message.chat.id,txt)
 
-# -------------------- BAN --------------------
+    try:
+        cmd = message.text.split()[1].replace("/", "")
+        data["set_mode"] = cmd
+        data["commands"][cmd] = []
+        save(data)
+        bot.send_message(message.chat.id, "Send files now then /done")
+    except:
+        bot.send_message(message.chat.id, "Usage: /set commandname")
+
+# ================== SAVE FILES ==================
+
+@bot.message_handler(content_types=["document", "photo", "video", "audio"])
+def handle_files(message):
+    if message.from_user.id not in data["admins"]:
+        return
+
+    if not data["set_mode"]:
+        return
+
+    caption = clean_text(message.caption)
+
+    file_data = {
+        "type": message.content_type,
+        "file_id": message.document.file_id if message.document else message.photo[-1].file_id if message.photo else message.video.file_id if message.video else message.audio.file_id,
+        "caption": caption
+    }
+
+    data["commands"][data["set_mode"]].append(file_data)
+    save(data)
+
+# ================== DONE ==================
+
+@bot.message_handler(commands=["done"])
+def done(message):
+    if message.from_user.id not in data["admins"]:
+        return
+
+    if not data["set_mode"]:
+        return
+
+    upload_time = get_ist_time()
+
+    for file in data["commands"][data["set_mode"]]:
+        file["time"] = upload_time
+
+    save(data)
+
+    # Broadcast
+    for uid in data["users"]:
+        try:
+            bot.send_message(uid, "🔔 Key Updated")
+        except:
+            pass
+
+    data["set_mode"] = None
+    save(data)
+
+    bot.send_message(message.chat.id, "✅ Command Saved & Broadcasted")
+
+# ================== DYNAMIC COMMAND ==================
+
+@bot.message_handler(func=lambda m: m.text and m.text[1:] in data["commands"])
+def send_command(message):
+    uid = str(message.from_user.id)
+
+    if uid in data["banned"]:
+        return
+
+    if not is_joined(message.from_user.id):
+        bot.send_message(message.chat.id, "⚠️ Join Channel First")
+        return
+
+    cmd = message.text[1:]
+
+    for file in data["commands"][cmd]:
+        if file["type"] == "document":
+            bot.send_document(message.chat.id, file["file_id"], caption=file["caption"])
+        elif file["type"] == "photo":
+            bot.send_photo(message.chat.id, file["file_id"], caption=file["caption"])
+        elif file["type"] == "video":
+            bot.send_video(message.chat.id, file["file_id"], caption=file["caption"])
+        elif file["type"] == "audio":
+            bot.send_audio(message.chat.id, file["file_id"], caption=file["caption"])
+
+        bot.send_message(message.chat.id, f"📅 Uploaded: {file['time']} (IST)")
+
+# ================== BAN ==================
+
 @bot.message_handler(commands=["ban"])
 def ban(message):
     if message.from_user.id not in data["admins"]:
         return
-    uid=message.text.split()[1]
-    data["banned"][uid]=True
-    save(data)
-    bot.send_message(message.chat.id,"Banned")
+
+    try:
+        uid = message.text.split()[1]
+        data["banned"][uid] = True
+        save(data)
+        bot.send_message(message.chat.id, "User Banned")
+    except:
+        bot.send_message(message.chat.id, "Usage: /ban user_id")
+
+# ================== UNBAN ==================
 
 @bot.message_handler(commands=["unban"])
 def unban(message):
     if message.from_user.id not in data["admins"]:
         return
-    uid=message.text.split()[1]
-    if uid in data["banned"]:
-        del data["banned"][uid]
-        save(data)
-        bot.send_message(message.chat.id,"Unbanned")
+
+    try:
+        uid = message.text.split()[1]
+        if uid in data["banned"]:
+            del data["banned"][uid]
+            save(data)
+            bot.send_message(message.chat.id, "User Unbanned")
+    except:
+        bot.send_message(message.chat.id, "Usage: /unban user_id")
+
+# ================== BANLIST ==================
 
 @bot.message_handler(commands=["banlist"])
 def banlist(message):
     if message.from_user.id not in data["admins"]:
         return
-    bot.send_message(message.chat.id,str(data["banned"]))
 
-# -------------------- SUPPORT --------------------
-@bot.message_handler(commands=["support"])
-def support(message):
-    uid=str(message.from_user.id)
-    text=message.text.replace("/support","").strip()
-    if not text:
-        bot.send_message(message.chat.id,"Usage: /support your message")
-        return
+    text = "🚫 Banned Users:\n\n"
+    for uid in data["banned"]:
+        text += f"{uid}\n"
 
-    for admin in data["admins"]:
-        sent=bot.send_message(admin,f"Support from {uid}\n{text}")
-        data["support_map"][str(sent.message_id)]=uid
-    save(data)
-    bot.send_message(message.chat.id,"Message sent to admin")
+    bot.send_message(message.chat.id, text)
 
-@bot.message_handler(func=lambda m: m.reply_to_message and str(m.reply_to_message.message_id) in data["support_map"])
-def reply_support(message):
+# ================== USERLIST ==================
+
+@bot.message_handler(commands=["userlist"])
+def userlist(message):
     if message.from_user.id not in data["admins"]:
         return
-    original=str(message.reply_to_message.message_id)
-    user=data["support_map"][original]
-    bot.send_message(user,f"Admin Reply:\n{message.text}")
 
-# -------------------- RUN --------------------
+    text = f"📊 Total Users: {len(data['users'])}\n\n"
+
+    for uid, username in data["users"].items():
+        if username:
+            text += f"@{username} (ID: {uid})\n"
+        else:
+            text += f"{uid}\n"
+
+    bot.send_message(message.chat.id, text[:4000])
+
+# ================== RUN ==================
+
 print("Bot Running...")
 bot.infinity_polling()
