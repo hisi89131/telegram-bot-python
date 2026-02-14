@@ -1,105 +1,229 @@
 import telebot
-import time
+import os
+import json
 import re
+import time
 from datetime import datetime
 
-TOKEN = "8310389267:AAF1ssKWRGuJECXG9FPvhpvyI8RC1kkFDbQ"
-ADMIN_IDS = [1086634832]
+TOKEN = "8163746024:AAGQ9ARweqJl1sftXszz2WtG5F14l3kccJA"
+
+MAIN_ADMIN = 1086634832
 FORCE_GROUP = "@loader0fficial"
 
 bot = telebot.TeleBot(TOKEN)
-bot.remove_webhook()
 
-# Storage
-commands_data = {}
-user_upload_mode = {}
-admins = set(ADMIN_IDS)
+# Files
+USERS = "users.json"
+ADMINS = "admins.json"
+BANNED = "banned.json"
+COMMANDS = "commands.json"
+WARNINGS = "warnings.json"
 
+# ------------------ Utility ------------------
 
-# ---------------- FORCE JOIN CHECK ----------------
-def is_joined(user_id):
-    try:
-        member = bot.get_chat_member(FORCE_GROUP, user_id)
-        return member.status in ["member", "administrator", "creator"]
-    except:
-        return False
+def load(file):
+    if not os.path.exists(file):
+        return {}
+    with open(file, "r") as f:
+        return json.load(f)
 
+def save(file, data):
+    with open(file, "w") as f:
+        json.dump(data, f)
 
-def force_join_message(message):
-    markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(
-        telebot.types.InlineKeyboardButton("Join Group", url=f"https://t.me/{FORCE_GROUP.replace('@','')}"),
-    )
-    markup.add(
-        telebot.types.InlineKeyboardButton("Verify", callback_data="verify_join")
-    )
-    bot.send_message(message.chat.id, "Join group to use bot.", reply_markup=markup)
+def clean_text(text):
+    if not text:
+        return None
+    text = re.sub(r'https?://\S+', '', text)
+    text = re.sub(r'@\w+', '', text)
+    return text.strip()
 
+# ------------------ Start ------------------
 
-@bot.callback_query_handler(func=lambda call: call.data == "verify_join")
-def verify_join(call):
-    if is_joined(call.from_user.id):
-        bot.answer_callback_query(call.id, "Verified ✅")
-        bot.send_message(call.message.chat.id, "Access granted.")
-    else:
-        bot.answer_callback_query(call.id, "Still not joined ❌")
+@bot.message_handler(commands=['start'])
+def start(msg):
+    banned = load(BANNED)
+    if str(msg.from_user.id) in banned:
+        return
 
+    users = load(USERS)
+    users[str(msg.from_user.id)] = msg.from_user.username
+    save(USERS, users)
 
-# ---------------- ADMIN CHECK ----------------
-def is_admin(user_id):
-    return user_id in admins
+    bot.reply_to(msg, "Bot is working ✅")
 
+# ------------------ Help ------------------
 
-# ---------------- START ----------------
-@bot.message_handler(commands=["start"])
-def start_cmd(message):
-    if not is_joined(message.from_user.id):
-        return force_join_message(message)
-    bot.reply_to(message, "Bot is working ✅")
-
-
-# ---------------- HELP ----------------
-@bot.message_handler(commands=["help"])
-def help_cmd(message):
-    if not is_joined(message.from_user.id):
-        return force_join_message(message)
-
+@bot.message_handler(commands=['help'])
+def help_user(msg):
     text = """
-Available Commands:
+User Commands:
 
-/add name → Start new loader
-/done → Finish upload
-/delete name → Delete loader
-/edit name → Edit loader
-/addadmin id → Add admin
-/removeadmin id → Remove admin
-/help → Show commands
+/support <message>
+Use any created command name
 """
-    bot.send_message(message.chat.id, text)
+    bot.reply_to(msg, text)
 
-
-# ---------------- ADD LOADER ----------------
-@bot.message_handler(commands=["add"])
-def add_loader(message):
-    if not is_admin(message.from_user.id):
+@bot.message_handler(commands=['adminhelp'])
+def help_admin(msg):
+    if msg.from_user.id != MAIN_ADMIN and str(msg.from_user.id) not in load(ADMINS):
         return
-    try:
-        name = message.text.split()[1].lower()
-        user_upload_mode[message.from_user.id] = name
-        commands_data[name] = []
-        bot.reply_to(message, f"Send files for {name}. Use /done when finished.")
-    except:
-        bot.reply_to(message, "Usage: /add loadername")
+    text = """
+Admin Commands:
 
+/setcmd name
+/done
+/delcmd name
+/addadmin id
+/removeadmin id
+/adminlist
+/ban id
+/unban id
+/banlist
+/broadcast message
+/users
+"""
+    bot.reply_to(msg, text)
 
-# ---------------- DONE ----------------
-@bot.message_handler(commands=["done"])
-def done_upload(message):
-    if not is_admin(message.from_user.id):
+# ------------------ Admin System ------------------
+
+@bot.message_handler(commands=['addadmin'])
+def addadmin(msg):
+    if msg.from_user.id != MAIN_ADMIN:
         return
-    if message.from_user.id in user_upload_mode:
-        name = user_upload_mode.pop(message.from_user.id)
-        bot.reply_to(message, f"{name} saved successfully ✅")
+    admin_id = msg.text.split()[1]
+    admins = load(ADMINS)
+    admins[admin_id] = "ADMIN"
+    save(ADMINS, admins)
+    bot.reply_to(msg, "Admin Added ✅")
+
+@bot.message_handler(commands=['removeadmin'])
+def removeadmin(msg):
+    if msg.from_user.id != MAIN_ADMIN:
+        return
+    admin_id = msg.text.split()[1]
+    admins = load(ADMINS)
+    if admin_id in admins:
+        del admins[admin_id]
+        save(ADMINS, admins)
+        bot.reply_to(msg, "Admin Removed ✅")
+
+@bot.message_handler(commands=['adminlist'])
+def adminlist(msg):
+    if msg.from_user.id != MAIN_ADMIN:
+        return
+    admins = load(ADMINS)
+    text = "Admins:\n"
+    for i in admins:
+        text += f"{i} - ADMIN\n"
+    bot.reply_to(msg, text)
+
+# ------------------ Ban System ------------------
+
+@bot.message_handler(commands=['ban'])
+def ban(msg):
+    if msg.from_user.id != MAIN_ADMIN:
+        return
+    user_id = msg.text.split()[1]
+    banned = load(BANNED)
+    banned[user_id] = "BANNED"
+    save(BANNED, banned)
+    bot.reply_to(msg, "User Banned 🚫")
+
+@bot.message_handler(commands=['unban'])
+def unban(msg):
+    if msg.from_user.id != MAIN_ADMIN:
+        return
+    user_id = msg.text.split()[1]
+    banned = load(BANNED)
+    if user_id in banned:
+        del banned[user_id]
+        save(BANNED, banned)
+        bot.reply_to(msg, "User Unbanned ✅")
+
+@bot.message_handler(commands=['banlist'])
+def banlist(msg):
+    if msg.from_user.id != MAIN_ADMIN:
+        return
+    banned = load(BANNED)
+    bot.reply_to(msg, str(banned))
+
+# ------------------ Command Create ------------------
+
+active_cmd = {}
+
+@bot.message_handler(commands=['setcmd'])
+def setcmd(msg):
+    if msg.from_user.id != MAIN_ADMIN:
+        return
+    name = msg.text.split()[1]
+    active_cmd[msg.from_user.id] = name
+    bot.reply_to(msg, f"Send files for {name}")
+
+@bot.message_handler(content_types=['document','video','photo','audio'])
+def save_files(msg):
+    if msg.from_user.id not in active_cmd:
+        return
+
+    commands = load(COMMANDS)
+    name = active_cmd[msg.from_user.id]
+
+    if name not in commands:
+        commands[name] = {"files": [], "time": ""}
+
+    commands[name]["files"].append(msg.message_id)
+    save(COMMANDS, commands)
+
+@bot.message_handler(commands=['done'])
+def done(msg):
+    if msg.from_user.id not in active_cmd:
+        return
+    name = active_cmd[msg.from_user.id]
+    commands = load(COMMANDS)
+    commands[name]["time"] = datetime.now().strftime("%d-%m-%Y %H:%M")
+    save(COMMANDS, commands)
+    del active_cmd[msg.from_user.id]
+    bot.reply_to(msg, "Command Saved ✅")
+
+# ------------------ Delete Command ------------------
+
+@bot.message_handler(commands=['delcmd'])
+def delcmd(msg):
+    if msg.from_user.id != MAIN_ADMIN:
+        return
+    name = msg.text.split()[1]
+    commands = load(COMMANDS)
+    if name in commands:
+        del commands[name]
+        save(COMMANDS, commands)
+        bot.reply_to(msg, "Deleted ✅")
+
+# ------------------ Use Command ------------------
+
+@bot.message_handler(func=lambda msg: True)
+def handle_all(msg):
+    banned = load(BANNED)
+    if str(msg.from_user.id) in banned:
+        return
+
+    commands = load(COMMANDS)
+    text = msg.text
+
+    if text in commands:
+        data = commands[text]
+        bot.send_message(msg.chat.id, f"Uploaded: {data['time']}")
+        for mid in data["files"]:
+            bot.copy_message(msg.chat.id, MAIN_ADMIN, mid)
+
+# ------------------ Support ------------------
+
+@bot.message_handler(commands=['support'])
+def support(msg):
+    message = msg.text.replace("/support ","")
+    bot.send_message(MAIN_ADMIN, f"Support from {msg.from_user.id}:\n{message}")
+
+print("Bot Running...")
+bot.infinity_polling()        bot.reply_to(message, f"{name} saved successfully ✅")
 
 
 # ---------------- DELETE LOADER ----------------
