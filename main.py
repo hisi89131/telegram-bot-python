@@ -3,7 +3,7 @@ import time
 import re
 from datetime import datetime
 
-TOKEN = "8060694774:AAHv6NFTRKn6hoxlXI_IMY5NlVuk4AiAyRw"
+TOKEN = "8310389267:AAF1ssKWRGuJECXG9FPvhpvyI8RC1kkFDbQ"
 ADMIN_IDS = [1086634832]
 FORCE_GROUP = "@loader0fficial"
 
