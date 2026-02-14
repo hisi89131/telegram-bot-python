@@ -7,7 +7,7 @@ import pytz
 
 # ================= CONFIG =================
 
-BOT_TOKEN = "8531299371:AAGUMeb-QtITerFMPj833TRpWfLKAFI_KiY"
+BOT_TOKEN = "8232988598:AAHDr8S64UE2VmqvxR9ZqN4-UXNoPrjs2ag"
 MAIN_ADMIN = 1086634832
 MAIN_CHANNEL = "@loader0fficial"
 
@@ -70,6 +70,8 @@ def register_user(user):
                 (str(user.id), user.username))
     conn.commit()
 
+# ================= FORCE JOIN =================
+
 def joined(user_id):
     groups = [MAIN_CHANNEL]
     cur.execute("SELECT chat_id FROM force_groups")
@@ -92,7 +94,7 @@ def join_buttons():
 
     for g in groups:
         link = f"https://t.me/{g.replace('@','')}"
-        markup.add(types.InlineKeyboardButton(f"Join {g}", url=link))
+        markup.add(types.InlineKeyboardButton("Join Group", url=link))
 
     markup.add(types.InlineKeyboardButton("Verify ✅", callback_data="verify"))
     return markup
@@ -125,185 +127,112 @@ def verify(call):
     else:
         bot.answer_callback_query(call.id,"Join all groups first")
 
-# ================= CMD PANEL =================
+# ================= SET SYSTEM =================
 
-@bot.message_handler(commands=["cmd"])
-def cmd(msg):
+current_set = {}
+
+@bot.message_handler(commands=["set"])
+def set_command(msg):
+    if not is_admin(str(msg.from_user.id)):
+        return
+    try:
+        name = msg.text.split()[1]
+        current_set[str(msg.from_user.id)] = name
+        cur.execute("INSERT OR REPLACE INTO commands VALUES(?,?)",(name,""))
+        cur.execute("DELETE FROM files WHERE command_name=?",(name,))
+        conn.commit()
+        bot.send_message(msg.chat.id,"Send files then /done")
+    except:
+        bot.send_message(msg.chat.id,"Usage: /set name")
+
+@bot.message_handler(content_types=["document","photo","video","audio"])
+def save_files(msg):
+    uid = str(msg.from_user.id)
+    if uid not in current_set:
+        return
+
+    cmd = current_set[uid]
+
+    if msg.document:
+        file_id = msg.document.file_id
+        file_type = "document"
+    elif msg.photo:
+        file_id = msg.photo[-1].file_id
+        file_type = "photo"
+    elif msg.video:
+        file_id = msg.video.file_id
+        file_type = "video"
+    elif msg.audio:
+        file_id = msg.audio.file_id
+        file_type = "audio"
+    else:
+        return
+
+    caption = clean_caption(msg.caption)
+
+    cur.execute("INSERT INTO files(command_name,file_id,file_type,caption) VALUES(?,?,?,?)",
+                (cmd,file_id,file_type,caption))
+    conn.commit()
+
+@bot.message_handler(commands=["done"])
+def done(msg):
+    uid = str(msg.from_user.id)
+    if uid not in current_set:
+        return
+
+    cmd = current_set[uid]
+    time_now = ist_time()
+
+    cur.execute("UPDATE commands SET upload_time=? WHERE name=?",(time_now,cmd))
+    conn.commit()
+
+    del current_set[uid]
+
+    bot.send_message(msg.chat.id,"Saved & Updated")
+
+# ================= DYNAMIC COMMAND =================
+
+@bot.message_handler(func=lambda m: m.text and m.text.startswith("/"))
+def dynamic(msg):
     uid = str(msg.from_user.id)
 
     if is_banned(uid):
         return
 
-    if is_admin(uid):
-        text = """👑 Admin Panel:
+    cmd = msg.text[1:]
 
-/set name
-/done
-/ban id
-/unban id
-/banlist
-/userlist
-/addforce @group
-/delforce @group
-/broadcast message
-/support message
-/cmd"""
-    else:
-        if not joined(uid):
-            bot.send_message(msg.chat.id,
-                             "Join required groups",
-                             reply_markup=join_buttons())
-            return
+    builtins = ["start","cmd","set","done","ban","unban","banlist","userlist","addforce","delforce","broadcast","support"]
 
-        cur.execute("SELECT name FROM commands")
-        cmds = cur.fetchall()
-
-        text="Available Commands:\n\n"
-        for c in cmds:
-            text+=f"/{c[0]}\n"
-
-        text+="\n/support message\n/cmd"
-
-    bot.send_message(msg.chat.id,text)
-
-# ================= USERLIST (UNCHANGED) =================
-
-@bot.message_handler(commands=["userlist"])
-def userlist(msg):
-    if not is_admin(str(msg.from_user.id)):
+    if cmd in builtins:
         return
 
-    cur.execute("SELECT user_id,username FROM users")
-    users=cur.fetchall()
-
-    text=f"Total Users: {len(users)}\n\n"
-    for u in users:
-        if u[1]:
-            text+=f"@{u[1]} (ID:{u[0]})\n"
-        else:
-            text+=f"ID:{u[0]}\n"
-
-    bot.send_message(msg.chat.id,text[:4000])
-
-# ================= BAN SYSTEM (UNCHANGED) =================
-
-@bot.message_handler(commands=["ban"])
-def ban(msg):
-    if not is_admin(str(msg.from_user.id)):
-        return
-    try:
-        uid=msg.text.split()[1]
-        cur.execute("INSERT OR IGNORE INTO banned VALUES(?)",(uid,))
-        conn.commit()
-        bot.send_message(msg.chat.id,"User banned")
-    except:
-        bot.send_message(msg.chat.id,"Usage: /ban id")
-
-@bot.message_handler(commands=["unban"])
-def unban(msg):
-    if not is_admin(str(msg.from_user.id)):
-        return
-    try:
-        uid=msg.text.split()[1]
-        cur.execute("DELETE FROM banned WHERE user_id=?",(uid,))
-        conn.commit()
-        bot.send_message(msg.chat.id,"User unbanned")
-    except:
-        bot.send_message(msg.chat.id,"Usage: /unban id")
-
-@bot.message_handler(commands=["banlist"])
-def banlist(msg):
-    if not is_admin(str(msg.from_user.id)):
-        return
-    cur.execute("SELECT user_id FROM banned")
-    users=cur.fetchall()
-    text="Banned Users:\n\n"
-    for u in users:
-        text+=f"{u[0]}\n"
-    bot.send_message(msg.chat.id,text)
-
-# ================= FORCE =================
-
-@bot.message_handler(commands=["addforce"])
-def addforce(msg):
-    if not is_admin(str(msg.from_user.id)):
-        return
-    try:
-        gid=msg.text.split()[1]
-        cur.execute("INSERT OR IGNORE INTO force_groups VALUES(?)",(gid,))
-        conn.commit()
-        bot.send_message(msg.chat.id,"Force group added")
-    except:
-        bot.send_message(msg.chat.id,"Usage: /addforce @group")
-
-@bot.message_handler(commands=["delforce"])
-def delforce(msg):
-    if not is_admin(str(msg.from_user.id)):
-        return
-    try:
-        gid=msg.text.split()[1]
-        cur.execute("DELETE FROM force_groups WHERE chat_id=?",(gid,))
-        conn.commit()
-        bot.send_message(msg.chat.id,"Force group removed")
-    except:
-        bot.send_message(msg.chat.id,"Usage: /delforce @group")
-
-# ================= BROADCAST =================
-
-@bot.message_handler(commands=["broadcast"])
-def broadcast(msg):
-    if str(msg.from_user.id)!=str(MAIN_ADMIN):
+    if not joined(uid):
+        bot.send_message(msg.chat.id,
+                         "Join required groups",
+                         reply_markup=join_buttons())
         return
 
-    text=msg.text.replace("/broadcast","").strip()
-    if not text:
-        bot.send_message(msg.chat.id,"Usage: /broadcast message")
+    cur.execute("SELECT upload_time FROM commands WHERE name=?",(cmd,))
+    row = cur.fetchone()
+    if not row:
         return
 
-    cur.execute("SELECT user_id FROM users")
-    users=cur.fetchall()
+    upload_time = row[0]
 
-    for u in users:
-        try:
-            bot.send_message(u[0],text)
-        except:
-            pass
+    cur.execute("SELECT file_id,file_type,caption FROM files WHERE command_name=?",(cmd,))
+    files = cur.fetchall()
 
-    bot.send_message(msg.chat.id,"Broadcast Sent")
+    for f in files:
+        if f[1]=="document":
+            bot.send_document(msg.chat.id,f[0],caption=f[2])
+        elif f[1]=="photo":
+            bot.send_photo(msg.chat.id,f[0],caption=f[2])
+        elif f[1]=="video":
+            bot.send_video(msg.chat.id,f[0],caption=f[2])
+        elif f[1]=="audio":
+            bot.send_audio(msg.chat.id,f[0],caption=f[2])
 
-# ================= SUPPORT =================
-
-@bot.message_handler(commands=["support"])
-def support(msg):
-    uid=str(msg.from_user.id)
-    if is_banned(uid):
-        return
-
-    text=msg.text.replace("/support","").strip()
-    if not text:
-        bot.send_message(msg.chat.id,"Usage: /support message")
-        return
-
-    sent=bot.send_message(MAIN_ADMIN,
-                          f"Support Request\n\nUser: {uid}\n\n{text}\n\nReply to respond")
-
-    cur.execute("INSERT OR REPLACE INTO support_map VALUES(?,?)",
-                (str(sent.message_id),uid))
-    conn.commit()
-
-    bot.send_message(msg.chat.id,"Message sent to admin")
-
-@bot.message_handler(func=lambda m: m.reply_to_message is not None)
-def reply_support(msg):
-    if not is_admin(str(msg.from_user.id)):
-        return
-
-    reply_id=str(msg.reply_to_message.message_id)
-    cur.execute("SELECT user_id FROM support_map WHERE admin_msg_id=?",(reply_id,))
-    row=cur.fetchone()
-
-    if row:
-        bot.send_message(row[0],f"Admin Reply:\n\n{msg.text}")
+    bot.send_message(msg.chat.id,f"Uploaded: {upload_time}")
 
 # ================= RUN =================
 
