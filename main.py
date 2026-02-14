@@ -6,7 +6,7 @@ import pytz
 
 # ================= CONFIG =================
 
-BOT_TOKEN = "8531299371:AAH1TYjwf2DZhjam62fBo2XsIpcCmztDKIw"
+BOT_TOKEN = "8531299371:AAFveyAiCILuy1CmdotGIArHTuJ6MpPR2fU"
 MAIN_ADMIN = 1086634832
 MAIN_CHANNEL = "@loader0fficial"
 
