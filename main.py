@@ -5,7 +5,7 @@ import time
 TOKEN = "8506015791:AAHxliJQ0nxZDOw4Ev9OwzDzdUZeDE5I0oc"
 
 bot = telebot.TeleBot(TOKEN)
-
+bot.remove_webhook()
 def clean_text(text):
     if not text:
         return None
