@@ -223,7 +223,7 @@ async def userlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text)
     
-# ---------- SUPPORT SYSTEM ---------- #
+# -------- SUPPORT SYSTEM -------- #
 
 support_mode = {}
 
@@ -236,53 +236,37 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     support_mode[user_id] = True
     await update.message.reply_text("Send your support message now.")
 
-
 async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = user.id
+    user_id = update.effective_user.id
 
-    # अगर admin reply कर रहा है
+    # Admin replying to user
     if update.message.reply_to_message:
         replied_text = update.message.reply_to_message.text
 
-    if replied_text and "Support Message From:" in replied_text:
-    try:
-        original_user_id = int(
-            replied_text.split("Support Message From:")[1]
-            .split("\n")[0]
-            .strip()
-        )
+        if replied_text and "Support Message From:" in replied_text:
+            original_user_id = int(
+                replied_text.split("Support Message From:")[1]
+                .split("\n")[0]
+                .strip()
+            )
 
-        await context.bot.send_message(
-            chat_id=original_user_id,
-            text=f"""
-<b>━━━━━━━━━━━━━━━━━━</b>
-💎 <b>ADMIN REPLY</b> 💎
-<b>━━━━━━━━━━━━━━━━━━</b>
+            await context.bot.send_message(
+                chat_id=original_user_id,
+                text=f"Admin Reply:\n\n{update.message.text}"
+            )
+            return
 
-👑 <b>Admin Says:</b>
-
-<blockquote>{update.message.text}</blockquote>
-
-<b>━━━━━━━━━━━━━━━━━━</b>
-""",
-            parse_mode="HTML"
-        )
-        return
-
-    except:
-        pass
-
-    # अगर user support भेज रहा है
+    # User sending support
     if support_mode.get(user_id):
         support_mode[user_id] = False
 
         await context.bot.send_message(
             chat_id=MAIN_ADMIN_ID,
-            text=f"📩 Support Message From: {user_id}\n\n{update.message.text}"
+            text=f"Support Message From: {user_id}\n\n{update.message.text}"
         )
 
-        await update.message.reply_text("✅ Support message sent.")
+        await update.message.reply_text("Support message sent.")
+
 
 # --------- SET COMMAND SYSTEM ---------
 
