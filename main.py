@@ -250,11 +250,22 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
                 await context.bot.send_message(
-                    chat_id=original_user_id,
-                    text=f"📩 Reply from Admin:\n\n{update.message.text}"
+    chat_id=original_user_id,
+    text=f"""
+<b>━━━━━━━━━━━━━━━━━━━━━━</b>
+<b>💎 𝐀𝐃𝐌𝐈𝐍 𝐑𝐄𝐏𝐋𝐘 💎</b>
+<b>━━━━━━━━━━━━━━━━━━━━━━</b>
+
+👑 <b>Admin Says:</b>
+
+<blockquote>{update.message.text}</blockquote>
+
+<b>━━━━━━━━━━━━━━━━━━━━━━</b>
+""",
+    parse_mode="HTML"
                 )
                 return
-            except:
+                except:
                 pass
 
     # अगर user support भेज रहा है
