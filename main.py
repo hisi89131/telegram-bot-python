@@ -592,10 +592,10 @@ async def set(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📦 Send files/text for /{cmd_name}\nWhen finished type /done"
     )
 
-
 async def collect_command_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
+    # Only work if user is creating command
     if user_id not in command_creation_mode:
         return
 
@@ -603,7 +603,7 @@ async def collect_command_data(update: Update, context: ContextTypes.DEFAULT_TYP
 
     file_data = {}
 
-    if msg.text:
+    if msg.text and not msg.text.startswith("/"):
         file_data["type"] = "text"
         file_data["content"] = clean_text(msg.text)
 
@@ -627,6 +627,7 @@ async def collect_command_data(update: Update, context: ContextTypes.DEFAULT_TYP
 
     command_creation_mode[user_id]["files"].append(file_data)
     await update.message.reply_text("✅ Added")
+
 
 
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -902,12 +903,14 @@ def main():
 
     # 2️⃣ Support system messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support))
-
+    
+    # 4️⃣ Custom command execution (LAST priority)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
+    
     # 3️⃣ Custom command creation collector
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
 
-    # 4️⃣ Custom command execution (LAST priority)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
+    
 
     print("🚀 BOT STARTED SUCCESSFULLY")
     app.run_polling()
