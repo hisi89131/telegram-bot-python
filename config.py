@@ -1,0 +1,3 @@
+MAIN_ADMIN_ID = 1086634832
+MAIN_FORCE_CHANNEL = "@loader0fficial"
+TIMEZONE = "Asia/Kolkata"
