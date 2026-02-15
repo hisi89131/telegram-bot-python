@@ -34,6 +34,7 @@ tz = pytz.timezone(TIMEZONE)
 command_storage = {}
 command_creation_mode = {}
 COMMAND_EXPIRY_HOURS = 24
+edit_mode = {}
 
 # ---------- ROLE CHECK ---------- #
 
@@ -272,9 +273,20 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text("Support message sent.")
 
-# --------- SET COMMAND SYSTEM ---------
+# ---------- SET COMMAND SYSTEM ----------
 
-async def set(update: Update, context: ContextTypes.DEFAULT_TYPE):
+command_creation_mode = {}
+command_storage = {}
+edit_mode = {}
+
+import datetime
+import pytz
+
+tz = pytz.timezone("Asia/Kolkata")
+
+# ---------------- SET ----------------
+
+async def set_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_role(user_id)
 
@@ -292,74 +304,80 @@ async def set(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "name": cmd_name,
         "data": [],
         "owner": user_id,
-        "time": datetime.datetime.now(tz)
     }
 
     await update.message.reply_text(
-        f"📦 Send files/text for /{cmd_name}\nWhen done type /done"
+        f"📦 Send files/text for /{cmd_name}\nWhen finished type /done"
     )
+
+# ---------------- COLLECT DATA ----------------
+
 async def collect_command_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    if user_id not in command_creation_mode:
+    # If creating new command
+    if user_id in command_creation_mode:
+        command_creation_mode[user_id]["data"].append(update.message)
+        await update.message.reply_text("✅ Added")
         return
 
-    command_creation_mode[user_id]["data"].append(update.message)
+    # If editing command
+    if user_id in edit_mode:
+        cmd_name = edit_mode[user_id]
+        command_storage[cmd_name]["data"].append(update.message)
+        await update.message.reply_text("✅ Added (Edit Mode)")
+        return
 
-    await update.message.reply_text("✅ Added")
-    
-# -------- DONE SYSTEM -------- #
+# ---------------- DONE ----------------
 
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    if user_id not in command_creation_mode:
-        await update.message.reply_text("❌ You are not creating any command.")
+    # New command save
+    if user_id in command_creation_mode:
+        cmd_data = command_creation_mode[user_id]
+        cmd_name = cmd_data["name"]
+
+        command_storage[cmd_name] = {
+            "data": cmd_data["data"],
+            "owner": cmd_data["owner"],
+            "time": datetime.datetime.now(tz).strftime("%d %B %Y | %I:%M %p IST")
+        }
+
+        del command_creation_mode[user_id]
+
+        await update.message.reply_text(f"✅ Command /{cmd_name} saved successfully!")
+
+        # Broadcast
+        for uid in users:
+            try:
+                await context.bot.send_message(
+                    chat_id=uid,
+                    text=f"🚀 Key '{cmd_name}' uploaded/updated successfully!"
+                )
+            except:
+                pass
+
         return
 
-    cmd_data = command_creation_mode[user_id]
-    cmd_name = cmd_data["name"]
+    # Edit save
+    if user_id in edit_mode:
+        cmd_name = edit_mode[user_id]
+        del edit_mode[user_id]
+        await update.message.reply_text(f"✅ Command /{cmd_name} updated successfully!")
+        return
 
-    command_storage[cmd_name] = {
-        "data": cmd_data["data"],
-        "owner": cmd_data["owner"],
-        "time": cmd_data["time"]
-    }
+    await update.message.reply_text("❌ You are not creating or editing any command.")
 
-    del command_creation_mode[user_id]
-
-    await update.message.reply_text(f"✅ Command /{cmd_name} saved successfully!")
-
-    # Broadcast
-    for uid in users:
-        try:
-            await context.bot.send_message(
-                chat_id=uid,
-                text=f"🚀 Key '{cmd_name}' uploaded/updated successfully!"
-            )
-        except:
-            pass    
-            
-# -------- COMMAND RUNNER SYSTEM -------- #
+# ---------------- CUSTOM COMMAND HANDLER ----------------
 
 async def custom_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cmd_name = update.message.text[1:].lower()
 
-    if not update.message or not update.message.text:
+    if cmd_name not in command_storage:
         return
 
-    cmd = update.message.text.replace("/", "").lower()
-
-    if cmd not in command_storage:
-        return
-
-    cmd_data = command_storage[cmd]
-
-    # Expiry check
-    now = datetime.datetime.now(tz)
-    if (now - cmd_data["time"]).total_seconds() > COMMAND_EXPIRY_HOURS * 3600:
-        del command_storage[cmd]
-        await update.message.reply_text("❌ This command expired.")
-        return
+    cmd_data = command_storage[cmd_name]
 
     for msg in cmd_data["data"]:
         try:
@@ -367,10 +385,8 @@ async def custom_command_handler(update: Update, context: ContextTypes.DEFAULT_T
         except:
             pass
 
-    upload_time = cmd_data["time"].strftime("%d %b %Y | %I:%M %p IST")
-
     await update.message.reply_text(
-        f"🔴 Uploaded At: {upload_time}"
+        f"🕒 Uploaded On: {cmd_data['time']}"
     )     
     
 # ---------- CMD LIST ---------- #
@@ -451,18 +467,20 @@ def main():
     app.add_handler(CommandHandler("userlist", userlist))
     app.add_handler(CommandHandler("support", support))
     app.add_handler(CommandHandler("cmd", cmd))
-    app.add_handler(CommandHandler("set", set))
+
+    # ✅ SET SYSTEM
+    app.add_handler(CommandHandler("set", set_command))
     app.add_handler(CommandHandler("done", done))
     app.add_handler(CommandHandler("delcmd", delcmd))
-    # 🔥 FIRST support_message
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, support_message))
-    # फिर collect_command_data
+
+    # ✅ FIRST collect files
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
-    # फिर custom commands
+
+    # ✅ THEN run custom commands
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
+
     print("Bot Running...")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
