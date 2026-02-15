@@ -15,6 +15,7 @@ from config import MAIN_ADMIN_ID, MAIN_FORCE_CHANNEL, TIMEZONE
 logging.basicConfig(level=logging.INFO)
 
 BOT_TOKEN = "8232988598:AAH16Uai8UwFKLdGkAt6rxSSZnGAThxGbzk"
+MAIN_ADMIN_ID = 1086634832
 
 # ---------- MEMORY STORAGE ---------- #
 
@@ -233,13 +234,38 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id
 
+    # अगर admin reply कर रहा है
+    if update.message.reply_to_message:
+        replied_text = update.message.reply_to_message.text
+        
+    if replied_text and "Support Message From:" in replied_text:
+            try:
+                original_user_id = int(
+                    replied_text.split("Support Message From:")[1]
+                    .split("\n")[0]
+                    .strip()
+                )
+
+                await context.bot.send_message(
+                    chat_id=original_user_id,
+                    text=f"📩 Reply from Admin:\n{update.message.text}"
+                )
+
+                return
+            except:
+                pass
+
+    # अगर user support भेज रहा है
     if support_mode.get(user_id):
         support_mode[user_id] = False
 
-        text = f"📩 Support Message\nFrom: {user_id}\n\n{update.message.text}"
-        await context.bot.send_message(MAIN_ADMIN_ID, text)
+        await context.bot.send_message(
+            chat_id=MAIN_ADMIN_ID,
+            text=f"📩 Support Message From: {user_id}\n\n{update.message.text}"
+        )
 
         await update.message.reply_text("✅ Support message sent.")
 
