@@ -217,7 +217,84 @@ async def userlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"{uid}\n"
 
     await update.message.reply_text(text)
+    
+# ---------- SUPPORT SYSTEM ---------- #
 
+support_mode = {}
+
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id in banned_users:
+        return
+
+    support_mode[user_id] = True
+    await update.message.reply_text("Send your support message now.")
+
+
+async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if support_mode.get(user_id):
+        support_mode[user_id] = False
+
+        text = f"📩 Support Message\nFrom: {user_id}\n\n{update.message.text}"
+        await context.bot.send_message(MAIN_ADMIN_ID, text)
+
+        await update.message.reply_text("✅ Support message sent.")
+
+
+# ---------- CMD LIST ---------- #
+
+async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    role = get_role(user_id)
+
+    text = "📜 Available Commands:\n"
+
+    if role == "main_admin":
+        text += "All Custom Commands:\n"
+        for cmd_name in custom_commands:
+            text += f"/{cmd_name}\n"
+
+    elif role == "admin":
+        text += "Your Custom Commands:\n"
+        for cmd_name, data in custom_commands.items():
+            if data["owner"] == user_id:
+                text += f"/{cmd_name}\n"
+
+    else:
+        for cmd_name in custom_commands:
+            text += f"/{cmd_name}\n"
+        text += "\n/support"
+
+    await update.message.reply_text(text)
+
+
+# ---------- DELETE CUSTOM COMMAND ---------- #
+
+async def delcmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    role = get_role(user_id)
+
+    if not context.args:
+        await update.message.reply_text("Usage: /delcmd COMMAND_NAME")
+        return
+
+    cmd_name = context.args[0]
+
+    if cmd_name not in custom_commands:
+        await update.message.reply_text("Command not found.")
+        return
+
+    owner = custom_commands[cmd_name]["owner"]
+
+    if role == "main_admin" or owner == user_id:
+        del custom_commands[cmd_name]
+        await update.message.reply_text(f"❌ Command /{cmd_name} deleted.")
+    else:
+        await update.message.reply_text("❌ You cannot delete this command.")
+        
 # ---------- MAIN ---------- #
 
 def main():
@@ -233,6 +310,10 @@ def main():
     app.add_handler(CommandHandler("unbanuser", unbanuser))
     app.add_handler(CommandHandler("banlist", banlist))
     app.add_handler(CommandHandler("userlist", userlist))
+    app.add_handler(CommandHandler("support", support))
+    app.add_handler(CommandHandler("cmd", cmd))
+    app.add_handler(CommandHandler("delcmd", delcmd))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, support_message))
     print("Bot Running...")
     app.run_polling()
 
