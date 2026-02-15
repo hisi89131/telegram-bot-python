@@ -651,6 +651,18 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"✅ Command /{cmd_name} saved successfully!")
 
+    # 🔥 ONLY ONE CLEAN BROADCAST MESSAGE
+    for uid in list(users):
+        if uid in banned_users:
+            continue
+        if uid == user_id:
+            continue
+
+        try:
+            await context.bot.send_message(uid, "🔥✅ Key update successful")
+        except:
+            pass
+
     # ==========================================
     # #--- CLEAN BROADCAST FIX
     # ==========================================
@@ -840,7 +852,36 @@ async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Failed to send message.")
 
     del support_mode[user_id]
+    
+async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    if not update.message.reply_to_message:
+        return
+
+    if update.effective_user.id != MAIN_ADMIN_ID:
+        return
+
+    original_text = update.message.reply_to_message.text
+
+    if not original_text:
+        return
+
+    if "From:" not in original_text:
+        return
+
+    try:
+        target_id = int(original_text.split("From:")[1].split("\n")[0].strip())
+    except:
+        return
+
+    try:
+        await context.bot.send_message(
+            target_id,
+            f"📩 Admin Reply:\n\n{update.message.text}"
+        )
+    except:
+        pass
+        
 # ==========================================
 # FINAL STAGE - HANDLER REGISTRATION
 # ==========================================
@@ -884,17 +925,20 @@ def main():
     # Support system
     app.add_handler(CommandHandler("support", support))
 
-    # ==========================================
-    # #--- FIXED MESSAGE HANDLER ORDER
-    # ==========================================
+    # ==================================================
+    # FIXED MESSAGE HANDLER ORDER
+    # ==================================================
 
-    # 1️⃣ Support system first
+    # 1️⃣ Admin reply to support (FIRST priority)
+    app.add_handler(MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, handle_admin_reply))
+
+    # 2️⃣ Support system messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support))
 
-    # 2️⃣ Custom command creation collector
+    # 3️⃣ Custom command creation collector
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
 
-    # 3️⃣ Custom command execution LAST
+    # 4️⃣ Custom command execution (LAST priority)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
 
     print("🚀 BOT STARTED SUCCESSFULLY")
