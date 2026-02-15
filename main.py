@@ -319,7 +319,13 @@ async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text)
 
+# MEMBER PANEL FIX
+async def memberpanel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if is_banned(update.effective_user.id):
+            await update.message.reply_text("❌ You are banned.")
+            return
 
+        await update.message.reply_text("👤 Member Panel\nUse /cmd to see available commands")
 # User List
 async def userlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -645,10 +651,17 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"✅ Command /{cmd_name} saved successfully!")
 
-    # 🔥 FULL CONTENT BROADCAST
-    for uid in users:
+    # ==========================================
+    # #--- CLEAN BROADCAST FIX
+    # ==========================================
+
+    for uid in list(users):
         if uid in banned_users:
             continue
+
+        if uid == user_id:
+            continue   # creator ko dobara send nahi karega
+
         for file in command_storage[cmd_name]["files"]:
             try:
                 if file["type"] == "text":
@@ -666,8 +679,10 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
 
-        await context.bot.send_message(uid, f"📅 Uploaded On:\n{ist_time}")
-
+        await context.bot.send_message(
+            uid,
+            f"📅 Uploaded On:\n{ist_time}"
+        )
 
 # ==========================================
 # STAGE 9 - CUSTOM COMMAND EXECUTION (UPDATED)
@@ -842,7 +857,7 @@ def main():
     app.add_handler(CommandHandler("addadmin", addadmin))
     app.add_handler(CommandHandler("removeadmin", removeadmin))
     app.add_handler(CommandHandler("adminlist", adminlist))
-
+    app.add_handler(CommandHandler("memberpanel", memberpanel))
     # User tracking
     app.add_handler(CommandHandler("userlist", userlist))
 
@@ -869,9 +884,17 @@ def main():
     # Support system
     app.add_handler(CommandHandler("support", support))
 
-    # Message handlers (ORDER MATTERS)
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
+    # ==========================================
+    # #--- FIXED MESSAGE HANDLER ORDER
+    # ==========================================
+
+    # 1️⃣ Support system first
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support))
+
+    # 2️⃣ Custom command creation collector
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
+
+    # 3️⃣ Custom command execution LAST
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
 
     print("🚀 BOT STARTED SUCCESSFULLY")
