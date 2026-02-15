@@ -246,31 +246,32 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         replied_text = update.message.reply_to_message.text
 
         if replied_text and "Support Message From:" in replied_text:
-            try:
-                original_user_id = int(
-                    replied_text.split("Support Message From:")[1]
-                    .split("\n")[0]
-                    .strip()
-                )
+    try:
+        original_user_id = int(
+            replied_text.split("Support Message From:")[1]
+            .split("\n")[0]
+            .strip()
+        )
 
-                await context.bot.send_message(
-    chat_id=original_user_id,
-    text=f"""
-<b>━━━━━━━━━━━━━━━━━━━━━━</b>
-<b>💎 𝐀𝐃𝐌𝐈𝐍 𝐑𝐄𝐏𝐋𝐘 💎</b>
-<b>━━━━━━━━━━━━━━━━━━━━━━</b>
+        await context.bot.send_message(
+            chat_id=original_user_id,
+            text=f"""
+<b>━━━━━━━━━━━━━━━━━━</b>
+💎 <b>ADMIN REPLY</b> 💎
+<b>━━━━━━━━━━━━━━━━━━</b>
 
 👑 <b>Admin Says:</b>
 
 <blockquote>{update.message.text}</blockquote>
 
-<b>━━━━━━━━━━━━━━━━━━━━━━</b>
+<b>━━━━━━━━━━━━━━━━━━</b>
 """,
-    parse_mode="HTML"
-                )
-                return
-                except:
-                pass
+            parse_mode="HTML"
+        )
+        return
+
+    except:
+        pass
 
     # अगर user support भेज रहा है
     if support_mode.get(user_id):
