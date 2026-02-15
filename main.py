@@ -663,39 +663,7 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-    # ==========================================
-    # #--- CLEAN BROADCAST FIX
-    # ==========================================
-
-    for uid in list(users):
-        if uid in banned_users:
-            continue
-
-        if uid == user_id:
-            continue   # creator ko dobara send nahi karega
-
-        for file in command_storage[cmd_name]["files"]:
-            try:
-                if file["type"] == "text":
-                    await context.bot.send_message(uid, file["content"])
-
-                elif file["type"] == "photo":
-                    await context.bot.send_photo(uid, file["file_id"], caption=file["caption"])
-
-                elif file["type"] == "document":
-                    await context.bot.send_document(uid, file["file_id"], caption=file["caption"])
-
-                elif file["type"] == "video":
-                    await context.bot.send_video(uid, file["file_id"], caption=file["caption"])
-
-            except:
-                pass
-
-        await context.bot.send_message(
-            uid,
-            f"📅 Uploaded On:\n{ist_time}"
-        )
-
+    
 # ==========================================
 # STAGE 9 - CUSTOM COMMAND EXECUTION (UPDATED)
 # ==========================================
