@@ -240,8 +240,8 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # अगर admin reply कर रहा है
     if update.message.reply_to_message:
         replied_text = update.message.reply_to_message.text
-        
-    if replied_text and "Support Message From:" in replied_text:
+
+        if replied_text and "Support Message From:" in replied_text:
             try:
                 original_user_id = int(
                     replied_text.split("Support Message From:")[1]
@@ -251,9 +251,8 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 await context.bot.send_message(
                     chat_id=original_user_id,
-                    text=f"📩 Reply from Admin:\n{update.message.text}"
+                    text=f"📩 Reply from Admin:\n\n{update.message.text}"
                 )
-
                 return
             except:
                 pass
