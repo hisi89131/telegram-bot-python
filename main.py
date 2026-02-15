@@ -22,7 +22,7 @@ from telegram.ext import (
 # BOT CONFIG
 # ==============================
 
-BOT_TOKEN = "8531299371:AAG6_UoEJMcvAuv0XKPHirP2n-XoHVpitD8"
+BOT_TOKEN = "8531299371:AAF3qeyWj8RuQ5Nq7eK12CdNE7x9hJHv1Oc"
 MAIN_ADMIN_ID = 1086634832
 
 # IST Timezone
