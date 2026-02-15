@@ -104,7 +104,119 @@ async def adminpanel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text("❌ Access Denied")
+        
+# ---------- ADD ADMIN ---------- #
 
+async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /addadmin USER_ID")
+        return
+
+    user_id = int(context.args[0])
+    admins.add(user_id)
+    await update.message.reply_text(f"✅ Admin Added: {user_id}")
+
+
+# ---------- REMOVE ADMIN ---------- #
+
+async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /removeadmin USER_ID")
+        return
+
+    user_id = int(context.args[0])
+    admins.discard(user_id)
+    await update.message.reply_text(f"❌ Admin Removed: {user_id}")
+
+
+# ---------- ADMIN LIST ---------- #
+
+async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN_ID:
+        return
+
+    if not admins:
+        await update.message.reply_text("No Sub Admins")
+        return
+
+    text = "🛠 Sub Admin List:\n"
+    for a in admins:
+        text += f"{a}\n"
+
+    await update.message.reply_text(text)
+
+
+# ---------- BAN USER ---------- #
+
+async def banuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /banuser USER_ID")
+        return
+
+    user_id = int(context.args[0])
+    banned_users.add(user_id)
+    await update.message.reply_text(f"🚫 User Banned: {user_id}")
+
+
+# ---------- UNBAN USER ---------- #
+
+async def unbanuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /unbanuser USER_ID")
+        return
+
+    user_id = int(context.args[0])
+    banned_users.discard(user_id)
+    await update.message.reply_text(f"✅ User Unbanned: {user_id}")
+
+
+# ---------- BAN LIST ---------- #
+
+async def banlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN_ID:
+        return
+
+    if not banned_users:
+        await update.message.reply_text("No Banned Users")
+        return
+
+    text = "🚫 Banned Users:\n"
+    for u in banned_users:
+        text += f"{u}\n"
+
+    await update.message.reply_text(text)
+
+
+# ---------- USER LIST ---------- #
+
+async def userlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN_ID:
+        return
+
+    if not users:
+        await update.message.reply_text("No Users Yet")
+        return
+
+    text = "👥 Users List:\n"
+    for uid, uname in users.items():
+        if uname:
+            text += f"{uname} - {uid}\n"
+        else:
+            text += f"{uid}\n"
+
+    await update.message.reply_text(text)
 
 # ---------- MAIN ---------- #
 
@@ -114,7 +226,13 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("memberpanel", memberpanel))
     app.add_handler(CommandHandler("adminpanel", adminpanel))
-
+    app.add_handler(CommandHandler("addadmin", addadmin))
+    app.add_handler(CommandHandler("removeadmin", removeadmin))
+    app.add_handler(CommandHandler("adminlist", adminlist))
+    app.add_handler(CommandHandler("banuser", banuser))
+    app.add_handler(CommandHandler("unbanuser", unbanuser))
+    app.add_handler(CommandHandler("banlist", banlist))
+    app.add_handler(CommandHandler("userlist", userlist))
     print("Bot Running...")
     app.run_polling()
 
