@@ -1,7 +1,14 @@
-import logging
-import pytz
-from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+# ==========================================
+# STAGE 1 - CORE SETUP (PRODUCTION BASE)
+# ==========================================
+
+import datetime
+import re
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -10,35 +17,85 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from config import MAIN_ADMIN_ID, MAIN_FORCE_CHANNEL, TIMEZONE
 
-logging.basicConfig(level=logging.INFO)
+# ==============================
+# BOT CONFIG
+# ==============================
 
-BOT_TOKEN = "8232988598:AAFS_8fLi_f7FAi9Lcyb3HS4UmFQ_uwz0zA"
+BOT_TOKEN = "8531299371:AAFZcw-n-3jhwGMRHlx4CQDtUu-Rq7zKtvw"
 MAIN_ADMIN_ID = 1086634832
 
-# ---------- MEMORY STORAGE ---------- #
+# IST Timezone
+tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-users = {}
+print("Stage 1 Loaded Successfully")
+
+# ==========================================
+# STAGE 2 - GLOBAL MEMORY STRUCTURE
+# ==========================================
+
+# All private users
+users = set()
+
+# All groups where bot is added
+groups = set()
+
+# Sub Admins
 admins = set()
-admin_banned = set()
+
+# Banned members
 banned_users = set()
-force_channels = {MAIN_FORCE_CHANNEL}
-custom_commands = {}
-editing_state = {}
-support_warnings = {}
 
-tz = pytz.timezone(TIMEZONE)
+# Banned admins
+banned_admins = set()
 
-# -------- COMMAND STORAGE SYSTEM --------
+# ==============================
+# FORCE JOIN SYSTEM
+# ==============================
+
+# Structure:
+# {
+#   admin_id: {
+#       "channel_id": -100xxxxxxxx,
+#       "emoji": "🔥"
+#   }
+# }
+force_join_channels = {}
+
+# ==============================
+# CUSTOM COMMAND STORAGE
+# ==============================
+
+# Structure:
+# {
+#   "cmdname": {
+#       "owner": user_id,
+#       "files": [ file_data_objects ],
+#       "time": "IST TIME STRING"
+#   }
+# }
 command_storage = {}
+
+# Temporary command creation mode
+# {
+#   user_id: {
+#       "name": cmdname,
+#       "files": []
+#   }
+# }
 command_creation_mode = {}
-COMMAND_EXPIRY_HOURS = 24
-edit_mode = {}
 
-# ---------- ROLE CHECK ---------- #
+# ==============================
+# SUPPORT SYSTEM MEMORY
+# ==============================
 
-def get_role(user_id):
+support_mode = {}
+
+# ==========================================
+# STAGE 3 - ROLE SYSTEM & SECURITY
+# ==========================================
+
+def get_role(user_id: int):
     if user_id == MAIN_ADMIN_ID:
         return "main_admin"
     elif user_id in admins:
@@ -47,251 +104,434 @@ def get_role(user_id):
         return "member"
 
 
-# ---------- START ---------- #
+def is_banned(user_id: int):
+    if user_id in banned_users:
+        return True
+    if user_id in banned_admins:
+        return True
+    return False
+
+
+def can_use_admin_panel(user_id: int):
+    role = get_role(user_id)
+    if role in ["main_admin", "admin"] and user_id not in banned_admins:
+        return True
+    return False
+
+
+def can_use_main_admin_only(user_id: int):
+    if user_id == MAIN_ADMIN_ID:
+        return True
+    return False
+
+# ==========================================
+# STAGE 4 - START + TRACKING + FORCE JOIN
+# ==========================================
+
+async def check_force_join(user_id, context):
+    if not force_join_channels:
+        return True
+
+    for admin_id, data in force_join_channels.items():
+        channel_id = data["channel_id"]
+        try:
+            member = await context.bot.get_chat_member(channel_id, user_id)
+            if member.status in ["left", "kicked"]:
+                return False
+        except:
+            return False
+
+    return True
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    chat = update.effective_chat
+    user_id = user.id
 
-    if user.id in banned_users:
+    # Ban check
+    if is_banned(user_id):
+        await update.message.reply_text("❌ You are banned from using this bot.")
         return
 
-    users[user.id] = user.username
+    # Track users & groups
+    if chat.type == "private":
+        users.add(user_id)
+    else:
+        groups.add(chat.id)
 
-    role = get_role(user.id)
+    # Force join check (private only)
+    if chat.type == "private":
+        joined = await check_force_join(user_id, context)
+
+        if not joined:
+            buttons = []
+            for admin_id, data in force_join_channels.items():
+                channel_id = data["channel_id"]
+                emoji = data["emoji"]
+                buttons.append(
+                    [InlineKeyboardButton(f"{emoji} Join Channel", url=f"https://t.me/{str(channel_id).replace('-100','')}")]
+                )
+
+            buttons.append([InlineKeyboardButton("✅ Verify", callback_data="verify_join")])
+
+            reply_markup = InlineKeyboardMarkup(buttons)
+
+            await update.message.reply_text(
+                "⚠️ You must join required channels before using this bot.",
+                reply_markup=reply_markup
+            )
+            return
+
+    # Role-based start message
+    role = get_role(user_id)
 
     if role == "main_admin":
         await update.message.reply_text("👑 Main Admin Panel\nUse /adminpanel")
     elif role == "admin":
-        await update.message.reply_text("🛠 Sub Admin Panel\nUse /adminpanel")
+        await update.message.reply_text("🛠 Admin Panel\nUse /adminpanel")
     else:
         await update.message.reply_text("👤 Member Panel\nUse /memberpanel")
 
 
-# ---------- MEMBER PANEL ---------- #
+async def verify_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
 
-async def memberpanel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Member Commands:\n"
-        "/cmd\n"
-        "/support"
-    )
+    joined = await check_force_join(user_id, context)
 
+    if joined:
+        await query.answer("Verified Successfully!", show_alert=True)
+        await query.edit_message_text("✅ Verification Successful! Now use /start again.")
+    else:
+        await query.answer("❌ You have not joined all required channels.", show_alert=True)
 
-# ---------- ADMIN PANEL ---------- #
+# ==========================================
+# STAGE 5 - ADMIN PANEL & USER MANAGEMENT
+# ==========================================
 
 async def adminpanel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    role = get_role(update.effective_user.id)
+    user_id = update.effective_user.id
+
+    if not can_use_admin_panel(user_id):
+        await update.message.reply_text("❌ Access Denied.")
+        return
+
+    role = get_role(user_id)
+
+    text = "🛠 Admin Panel\n\n"
 
     if role == "main_admin":
-        await update.message.reply_text(
-            "Main Admin Commands:\n"
-            "/addadmin\n"
-            "/removeadmin\n"
+        text += (
+            "/addadmin USER_ID\n"
+            "/removeadmin USER_ID\n"
             "/adminlist\n"
-            "/banuser\n"
-            "/unbanuser\n"
+            "/userlist\n"
+            "/ban USER_ID\n"
+            "/unban USER_ID\n"
             "/banlist\n"
-            "/forceadd\n"
-            "/forceremove\n"
-            "/forcelist\n"
-            "/set\n"
-            "/edit\n"
-            "/done\n"
-            "/broadcast\n"
-            "/userlist"
-        )
-    elif role == "admin":
-        await update.message.reply_text(
-            "Sub Admin Commands:\n"
-            "/set\n"
-            "/edit\n"
-            "/done\n"
-            "/cmd"
+            "/broadcast message\n"
         )
     else:
-        await update.message.reply_text("❌ Access Denied")
-        
-# ---------- ADD ADMIN ---------- #
+        text += "You have limited permissions."
 
+    await update.message.reply_text(text)
+
+
+# Add Admin
 async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != MAIN_ADMIN_ID:
+    user_id = update.effective_user.id
+
+    if not can_use_main_admin_only(user_id):
+        await update.message.reply_text("❌ Only Main Admin Allowed.")
         return
 
     if not context.args:
         await update.message.reply_text("Usage: /addadmin USER_ID")
         return
 
-    user_id = int(context.args[0])
-    admins.add(user_id)
-    await update.message.reply_text(f"✅ Admin Added: {user_id}")
+    try:
+        new_admin = int(context.args[0])
+        admins.add(new_admin)
+        await update.message.reply_text(f"✅ {new_admin} added as admin.")
+    except:
+        await update.message.reply_text("❌ Invalid USER_ID")
 
 
-# ---------- REMOVE ADMIN ---------- #
-
+# Remove Admin
 async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != MAIN_ADMIN_ID:
+    user_id = update.effective_user.id
+
+    if not can_use_main_admin_only(user_id):
+        await update.message.reply_text("❌ Only Main Admin Allowed.")
         return
 
     if not context.args:
         await update.message.reply_text("Usage: /removeadmin USER_ID")
         return
 
-    user_id = int(context.args[0])
-    admins.discard(user_id)
-    await update.message.reply_text(f"❌ Admin Removed: {user_id}")
+    try:
+        remove_id = int(context.args[0])
+        admins.discard(remove_id)
+        await update.message.reply_text(f"❌ {remove_id} removed from admin.")
+    except:
+        await update.message.reply_text("❌ Invalid USER_ID")
 
 
-# ---------- ADMIN LIST ---------- #
-
+# Admin List
 async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != MAIN_ADMIN_ID:
+    user_id = update.effective_user.id
+
+    if not can_use_main_admin_only(user_id):
+        await update.message.reply_text("❌ Only Main Admin Allowed.")
         return
 
     if not admins:
-        await update.message.reply_text("No Sub Admins")
+        await update.message.reply_text("No Sub Admins.")
         return
 
-    text = "🛠 Sub Admin List:\n"
+    text = "👑 Sub Admin List:\n\n"
     for a in admins:
         text += f"{a}\n"
 
     await update.message.reply_text(text)
 
 
-# ---------- BAN USER ---------- #
+# User List
+async def userlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
 
-async def banuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != MAIN_ADMIN_ID:
+    if not can_use_main_admin_only(user_id):
+        await update.message.reply_text("❌ Only Main Admin Allowed.")
+        return
+
+    if not users:
+        await update.message.reply_text("No Users Found.")
+        return
+
+    text = f"👥 Total Users: {len(users)}\n\n"
+    for u in users:
+        text += f"{u}\n"
+
+    await update.message.reply_text(text)
+
+
+# Ban User
+async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if not can_use_main_admin_only(user_id):
+        await update.message.reply_text("❌ Only Main Admin Allowed.")
         return
 
     if not context.args:
-        await update.message.reply_text("Usage: /banuser USER_ID")
+        await update.message.reply_text("Usage: /ban USER_ID")
         return
 
-    user_id = int(context.args[0])
-    banned_users.add(user_id)
-    await update.message.reply_text(f"🚫 User Banned: {user_id}")
+    try:
+        target = int(context.args[0])
+
+        if target in admins:
+            banned_admins.add(target)
+        else:
+            banned_users.add(target)
+
+        await update.message.reply_text(f"🚫 {target} banned successfully.")
+    except:
+        await update.message.reply_text("❌ Invalid USER_ID")
 
 
-# ---------- UNBAN USER ---------- #
+# Unban User
+async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
 
-async def unbanuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != MAIN_ADMIN_ID:
+    if not can_use_main_admin_only(user_id):
+        await update.message.reply_text("❌ Only Main Admin Allowed.")
         return
 
     if not context.args:
-        await update.message.reply_text("Usage: /unbanuser USER_ID")
+        await update.message.reply_text("Usage: /unban USER_ID")
         return
 
-    user_id = int(context.args[0])
-    banned_users.discard(user_id)
-    await update.message.reply_text(f"✅ User Unbanned: {user_id}")
+    try:
+        target = int(context.args[0])
+        banned_users.discard(target)
+        banned_admins.discard(target)
+        await update.message.reply_text(f"✅ {target} unbanned successfully.")
+    except:
+        await update.message.reply_text("❌ Invalid USER_ID")
 
 
-# ---------- BAN LIST ---------- #
-
+# Ban List
 async def banlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != MAIN_ADMIN_ID:
-        return
+    user_id = update.effective_user.id
 
-    if not banned_users:
-        await update.message.reply_text("No Banned Users")
+    if not can_use_main_admin_only(user_id):
+        await update.message.reply_text("❌ Only Main Admin Allowed.")
         return
 
     text = "🚫 Banned Users:\n"
     for u in banned_users:
         text += f"{u}\n"
 
-    await update.message.reply_text(text)
-
-
-# ---------- USER LIST ---------- #
-
-async def userlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != MAIN_ADMIN_ID:
-        return
-
-    if not users:
-        await update.message.reply_text("No Users Yet")
-        return
-
-    text = "👥 Users List:\n"
-    for uid, uname in users.items():
-        if uname:
-            text += f"{uname} - {uid}\n"
-        else:
-            text += f"{uid}\n"
+    text += "\n🚫 Banned Admins:\n"
+    for a in banned_admins:
+        text += f"{a}\n"
 
     await update.message.reply_text(text)
-    
-# -------- SUPPORT SYSTEM --------
 
-support_mode = {}
+# ==========================================
+# STAGE 6 - BROADCAST SYSTEM
+# ==========================================
 
-async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    if user_id in banned_users:
+    if not can_use_main_admin_only(user_id):
+        await update.message.reply_text("❌ Only Main Admin Allowed.")
         return
 
-    support_mode[user_id] = True
-    await update.message.reply_text("Send your support message now.")
+    if not update.message.reply_to_message:
+        await update.message.reply_text("Reply to a message with /broadcast")
+        return
 
+    msg = update.message.reply_to_message
 
-async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    success = 0
+    failed = 0
+
+    # Send to Users
+    for uid in users:
+        if uid in banned_users:
+            continue
+
+        try:
+            if msg.text:
+                await context.bot.send_message(uid, msg.text)
+            elif msg.photo:
+                await context.bot.send_photo(uid, msg.photo[-1].file_id, caption=msg.caption)
+            elif msg.document:
+                await context.bot.send_document(uid, msg.document.file_id, caption=msg.caption)
+            elif msg.video:
+                await context.bot.send_video(uid, msg.video.file_id, caption=msg.caption)
+
+            success += 1
+        except:
+            failed += 1
+
+    # Send to Groups
+    for gid in groups:
+        try:
+            if msg.text:
+                await context.bot.send_message(gid, msg.text)
+            elif msg.photo:
+                await context.bot.send_photo(gid, msg.photo[-1].file_id, caption=msg.caption)
+            elif msg.document:
+                await context.bot.send_document(gid, msg.document.file_id, caption=msg.caption)
+            elif msg.video:
+                await context.bot.send_video(gid, msg.video.file_id, caption=msg.caption)
+
+            success += 1
+        except:
+            failed += 1
+
+    await update.message.reply_text(
+        f"📢 Broadcast Completed\n\n✅ Success: {success}\n❌ Failed: {failed}"
+    )
+
+# ==========================================
+# STAGE 7 - FORCE JOIN CONTROL SYSTEM
+# ==========================================
+
+async def addforce(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Ignore if creating command
-    if user_id in command_creation_mode:
+    if not can_use_admin_panel(user_id):
+        await update.message.reply_text("❌ Admin Only.")
         return
 
-    # 🔹 Admin replying to support
-    if update.message.reply_to_message:
-        replied_text = update.message.reply_to_message.text
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage:\n/addforce CHANNEL_ID EMOJI")
+        return
 
-        if replied_text and "Support Message From:" in replied_text:
-            original_user_id = int(
-                replied_text.split("Support Message From:")[1]
-                .split("\n")[0]
-                .strip()
-            )
+    try:
+        channel_id = int(context.args[0])
+        emoji = context.args[1]
 
-            await context.bot.send_message(
-                chat_id=original_user_id,
-                text="Admin Reply:\n\n" + update.message.text
-            )
+        if len(emoji) > 3:
+            await update.message.reply_text("❌ Only single emoji allowed.")
             return
 
-    # 🔹 User sending support message
-    if support_mode.get(user_id):
-        support_mode[user_id] = False
+        force_join_channels[user_id] = {
+            "channel_id": channel_id,
+            "emoji": emoji
+        }
 
-        await context.bot.send_message(
-            chat_id=MAIN_ADMIN_ID,
-            text=f"Support Message From: {user_id}\n\n{update.message.text}"
-        )
+        await update.message.reply_text("✅ Force channel added successfully.")
 
-        await update.message.reply_text("Support message sent.")
+    except:
+        await update.message.reply_text("❌ Invalid Channel ID.")
 
-# ---------- SET COMMAND SYSTEM ----------
 
-command_creation_mode = {}
-command_storage = {}
-edit_mode = {}
-
-import datetime
-import pytz
-
-tz = pytz.timezone("Asia/Kolkata")
-
-# ---------------- SET ----------------
-
-async def set_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def removeforce(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    role = get_role(user_id)
 
-    if role not in ["main_admin", "admin"]:
-        await update.message.reply_text("❌ Access Denied")
+    if not can_use_admin_panel(user_id):
+        await update.message.reply_text("❌ Admin Only.")
+        return
+
+    # Main admin can remove anyone's
+    if can_use_main_admin_only(user_id):
+        if not context.args:
+            await update.message.reply_text("Usage: /removeforce ADMIN_ID")
+            return
+
+        try:
+            target_admin = int(context.args[0])
+            if target_admin in force_join_channels:
+                del force_join_channels[target_admin]
+                await update.message.reply_text("✅ Force channel removed.")
+            else:
+                await update.message.reply_text("❌ Not Found.")
+        except:
+            await update.message.reply_text("❌ Invalid ID.")
+        return
+
+    # Sub admin remove own
+    if user_id in force_join_channels:
+        del force_join_channels[user_id]
+        await update.message.reply_text("✅ Your force channel removed.")
+    else:
+        await update.message.reply_text("❌ No force channel found.")
+
+
+async def forcelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if not can_use_admin_panel(user_id):
+        await update.message.reply_text("❌ Admin Only.")
+        return
+
+    if not force_join_channels:
+        await update.message.reply_text("No Force Channels Set.")
+        return
+
+    text = "📌 Active Force Channels:\n\n"
+
+    for admin_id, data in force_join_channels.items():
+        text += f"Admin: {admin_id}\nChannel: {data['channel_id']}\nEmoji: {data['emoji']}\n\n"
+
+    await update.message.reply_text(text)
+
+# ==========================================
+# STAGE 8 - CUSTOM COMMAND CREATION SYSTEM
+# ==========================================
+
+async def set(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if not can_use_admin_panel(user_id):
+        await update.message.reply_text("❌ Admin Only.")
         return
 
     if not context.args:
@@ -302,185 +542,288 @@ async def set_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     command_creation_mode[user_id] = {
         "name": cmd_name,
-        "data": [],
-        "owner": user_id,
+        "files": [],
+        "owner": user_id
     }
 
     await update.message.reply_text(
         f"📦 Send files/text for /{cmd_name}\nWhen finished type /done"
     )
 
-# ---------------- COLLECT DATA ----------------
 
 async def collect_command_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # If creating new command
-    if user_id in command_creation_mode:
-        command_creation_mode[user_id]["data"].append(update.message)
-        await update.message.reply_text("✅ Added")
+    if user_id not in command_creation_mode:
         return
 
-    # If editing command
-    if user_id in edit_mode:
-        cmd_name = edit_mode[user_id]
-        command_storage[cmd_name]["data"].append(update.message)
-        await update.message.reply_text("✅ Added (Edit Mode)")
-        return
+    msg = update.message
+    role = get_role(user_id)
 
-# ---------------- DONE ----------------
+    # ALWAYS remove forward source for everyone
+    msg.forward_date = None
+    msg.forward_from = None
+    msg.forward_from_chat = None
+
+    # Remove usernames & links if sub admin
+    if role == "admin":
+        if msg.caption:
+            msg.caption = msg.caption.replace("@", "")
+        if msg.text:
+            msg.text = msg.text.replace("@", "")
+
+    command_creation_mode[user_id]["files"].append(msg)
+    await update.message.reply_text("✅ Added")
+
 
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # New command save
-    if user_id in command_creation_mode:
-        cmd_data = command_creation_mode[user_id]
-        cmd_name = cmd_data["name"]
-
-        command_storage[cmd_name] = {
-            "data": cmd_data["data"],
-            "owner": cmd_data["owner"],
-            "time": datetime.datetime.now(tz).strftime("%d %B %Y | %I:%M %p IST")
-        }
-
-        del command_creation_mode[user_id]
-
-        await update.message.reply_text(f"✅ Command /{cmd_name} saved successfully!")
-
-        # Broadcast
-        for uid in users:
-            try:
-                await context.bot.send_message(
-                    chat_id=uid,
-                    text=f"🚀 Key '{cmd_name}' uploaded/updated successfully!"
-                )
-            except:
-                pass
-
+    if user_id not in command_creation_mode:
+        await update.message.reply_text("❌ You are not creating any command.")
         return
 
-    # Edit save
-    if user_id in edit_mode:
-        cmd_name = edit_mode[user_id]
-        del edit_mode[user_id]
-        await update.message.reply_text(f"✅ Command /{cmd_name} updated successfully!")
-        return
+    data = command_creation_mode[user_id]
+    cmd_name = data["name"]
 
-    await update.message.reply_text("❌ You are not creating or editing any command.")
+    ist_time = datetime.datetime.now(tz).strftime("%d %B %Y | %I:%M %p IST")
 
-# ---------------- CUSTOM COMMAND HANDLER ----------------
+    command_storage[cmd_name] = {
+        "files": data["files"],
+        "owner": data["owner"],
+        "time": ist_time
+    }
 
-async def custom_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cmd_name = update.message.text[1:].lower()
+    del command_creation_mode[user_id]
 
-    if cmd_name not in command_storage:
-        return
+    await update.message.reply_text(f"✅ Command /{cmd_name} saved successfully!")
 
-    cmd_data = command_storage[cmd_name]
-
-    for msg in cmd_data["data"]:
+    # Broadcast
+    for uid in users:
+        if uid in banned_users:
+            continue
         try:
-            await msg.copy(update.effective_chat.id)
+            await context.bot.send_message(
+                uid,
+                f"🚀 Key '{cmd_name}' uploaded/updated successfully!"
+            )
         except:
             pass
 
-    await update.message.reply_text(
-        f"🕒 Uploaded On: {cmd_data['time']}"
-    )     
-    
-# ---------- CMD LIST ---------- #
+    for gid in groups:
+        try:
+            await context.bot.send_message(
+                gid,
+                f"🚀 Key '{cmd_name}' uploaded/updated successfully!"
+            )
+        except:
+            pass
+
+# ==========================================
+# STAGE 9 - CUSTOM COMMAND EXECUTION SYSTEM
+# ==========================================
 
 async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_role(user_id)
 
-    text = "📜 Available Commands:\n"
+    if not command_storage:
+        await update.message.reply_text("No Commands Available.")
+        return
 
-    if role == "main_admin":
-        text += "All Custom Commands:\n"
-        for cmd_name in custom_commands:
-            text += f"/{cmd_name}\n"
+    text = "📜 Available Commands:\n\n"
 
-    elif role == "admin":
-        text += "Your Custom Commands:\n"
-        for cmd_name, data in custom_commands.items():
-            if data["owner"] == user_id:
-                text += f"/{cmd_name}\n"
+    for name, data in command_storage.items():
+        if role == "admin" and data["owner"] != user_id:
+            continue
+        text += f"/{name}\n"
 
-    else:
-        for cmd_name in custom_commands:
-            text += f"/{cmd_name}\n"
-        text += "\n/support"
+    if text.strip() == "📜 Available Commands:":
+        await update.message.reply_text("No Commands Available For You.")
+        return
 
     await update.message.reply_text(text)
 
-# -------- DELETE COMMAND --------
+
+async def custom_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    role = get_role(user_id)
+
+    if not update.message.text:
+        return
+
+    cmd_name = update.message.text.strip().replace("/", "").lower()
+
+    if cmd_name not in command_storage:
+        return
+
+    data = command_storage[cmd_name]
+
+    if role == "admin" and data["owner"] != user_id:
+        await update.message.reply_text("❌ You cannot access this command.")
+        return
+
+    for msg in data["files"]:
+        try:
+            if msg.text:
+                await context.bot.send_message(update.effective_chat.id, msg.text)
+
+            elif msg.photo:
+                await context.bot.send_photo(
+                    update.effective_chat.id,
+                    msg.photo[-1].file_id,
+                    caption=msg.caption
+                )
+
+            elif msg.document:
+                await context.bot.send_document(
+                    update.effective_chat.id,
+                    msg.document.file_id,
+                    caption=msg.caption
+                )
+
+            elif msg.video:
+                await context.bot.send_video(
+                    update.effective_chat.id,
+                    msg.video.file_id,
+                    caption=msg.caption
+                )
+
+        except:
+            pass
+
+    await context.bot.send_message(
+        update.effective_chat.id,
+        f"📅 Uploaded On:\n{data['time']}"
+    )
+
+
+# ==========================================
+# DELETE COMMAND
+# ==========================================
 
 async def delcmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_role(user_id)
 
-    # Command name missing
+    if not can_use_admin_panel(user_id):
+        await update.message.reply_text("❌ Admin Only.")
+        return
+
     if not context.args:
         await update.message.reply_text("Usage: /delcmd command_name")
         return
 
     cmd_name = context.args[0].lower()
 
-    # Command not found
     if cmd_name not in command_storage:
-        await update.message.reply_text("❌ Command not found.")
+        await update.message.reply_text("❌ Command Not Found.")
         return
 
-    owner = command_storage[cmd_name]["owner"]
-
-    # Main admin can delete any command
-    if role == "main_admin":
-        del command_storage[cmd_name]
-        await update.message.reply_text(f"❌ /{cmd_name} deleted successfully.")
+    if role == "admin" and command_storage[cmd_name]["owner"] != user_id:
+        await update.message.reply_text("❌ You cannot delete this command.")
         return
 
-    # Sub admin can delete only their own command
-    if role == "admin" and owner == user_id:
-        del command_storage[cmd_name]
-        await update.message.reply_text(f"❌ /{cmd_name} deleted successfully.")
+    del command_storage[cmd_name]
+    await update.message.reply_text("✅ Command deleted successfully.")
+
+
+# ==========================================
+# REMOVE FILE BY NUMBER
+# ==========================================
+
+async def removefile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    role = get_role(user_id)
+
+    if not can_use_admin_panel(user_id):
+        await update.message.reply_text("❌ Admin Only.")
         return
 
-    # Otherwise deny
-    await update.message.reply_text("❌ You cannot delete this command.")
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /removefile command_name file_number")
+        return
 
-# ---------- MAIN ---------- #
+    cmd_name = context.args[0].lower()
+
+    if cmd_name not in command_storage:
+        await update.message.reply_text("❌ Command Not Found.")
+        return
+
+    if role == "admin" and command_storage[cmd_name]["owner"] != user_id:
+        await update.message.reply_text("❌ You cannot edit this command.")
+        return
+
+    try:
+        index = int(context.args[1]) - 1
+        files = command_storage[cmd_name]["files"]
+
+        if index < 0 or index >= len(files):
+            await update.message.reply_text("❌ Invalid file number.")
+            return
+
+        del files[index]
+        await update.message.reply_text("✅ File removed successfully.")
+
+    except:
+        await update.message.reply_text("❌ Invalid input.")
+
+# ==========================================
+# FINAL STAGE - HANDLER REGISTRATION
+# ==========================================
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # Start & verify
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("memberpanel", memberpanel))
+    app.add_handler(CallbackQueryHandler(verify_join, pattern="^verify_join$"))
+
+    # Role/Admin system
     app.add_handler(CommandHandler("adminpanel", adminpanel))
     app.add_handler(CommandHandler("addadmin", addadmin))
     app.add_handler(CommandHandler("removeadmin", removeadmin))
     app.add_handler(CommandHandler("adminlist", adminlist))
-    app.add_handler(CommandHandler("banuser", banuser))
-    app.add_handler(CommandHandler("unbanuser", unbanuser))
+
+    # User tracking
+    app.add_handler(CommandHandler("users", users_list))
+
+    # Ban system
+    app.add_handler(CommandHandler("ban", ban))
+    app.add_handler(CommandHandler("unban", unban))
     app.add_handler(CommandHandler("banlist", banlist))
-    app.add_handler(CommandHandler("userlist", userlist))
-    app.add_handler(CommandHandler("support", support))
-    app.add_handler(CommandHandler("cmd", cmd))
 
-    # ✅ SET SYSTEM
-    app.add_handler(CommandHandler("set", set_command))
+    # Broadcast (main admin only)
+    app.add_handler(CommandHandler("broadcast", broadcast))
+
+    # Force join system
+    app.add_handler(CommandHandler("addforce", addforce))
+    app.add_handler(CommandHandler("removeforce", removeforce))
+    app.add_handler(CommandHandler("forcelist", forcelist))
+
+    # Custom command system
+    app.add_handler(CommandHandler("setcmd", setcmd))
     app.add_handler(CommandHandler("done", done))
+    app.add_handler(CommandHandler("cmd", cmd))
     app.add_handler(CommandHandler("delcmd", delcmd))
+    app.add_handler(CommandHandler("removefile", removefile))
 
-    # ✅ FIRST collect files
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
+    # Collect command data (while creating)
+    app.add_handler(MessageHandler(
+        filters.ALL & ~filters.COMMAND,
+        collect_command_data
+    ))
 
-    # ✅ THEN run custom commands
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
+    # Custom command execution
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        custom_command_handler
+    ))
 
-    print("Bot Running...")
+    print("🚀 BOT STARTED SUCCESSFULLY")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
+
