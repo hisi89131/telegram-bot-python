@@ -245,7 +245,7 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.reply_to_message:
         replied_text = update.message.reply_to_message.text
 
-        if replied_text and "Support Message From:" in replied_text:
+    if replied_text and "Support Message From:" in replied_text:
     try:
         original_user_id = int(
             replied_text.split("Support Message From:")[1]
