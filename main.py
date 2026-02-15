@@ -14,7 +14,7 @@ from config import MAIN_ADMIN_ID, MAIN_FORCE_CHANNEL, TIMEZONE
 
 logging.basicConfig(level=logging.INFO)
 
-BOT_TOKEN = "8232988598:AAHFGmw2BJAhbUJcC7a8p3bRRwaMq8dV6RE"
+BOT_TOKEN = "8232988598:AAFS_8fLi_f7FAi9Lcyb3HS4UmFQ_uwz0zA"
 MAIN_ADMIN_ID = 1086634832
 
 # ---------- MEMORY STORAGE ---------- #
