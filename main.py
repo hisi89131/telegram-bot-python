@@ -22,7 +22,7 @@ from telegram.ext import (
 # BOT CONFIG
 # ==============================
 
-BOT_TOKEN = "8531299371:AAFZcw-n-3jhwGMRHlx4CQDtUu-Rq7zKtvw"
+BOT_TOKEN = "8531299371:AAG6_UoEJMcvAuv0XKPHirP2n-XoHVpitD8"
 MAIN_ADMIN_ID = 1086634832
 
 # IST Timezone
@@ -705,6 +705,22 @@ async def custom_command_handler(update: Update, context: ContextTypes.DEFAULT_T
         update.effective_chat.id,
         f"📅 Uploaded On:\n{data['time']}"
     )
+
+# ==========================================
+# LIST ALL CUSTOM COMMANDS
+# ==========================================
+
+async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not command_storage:
+        await update.message.reply_text("No Commands Available.")
+        return
+
+    text = "📜 Available Commands:\n\n"
+
+    for name in command_storage.keys():
+        text += f"/{name}\n"
+
+    await update.message.reply_text(text)
     
 # ==========================================
 # DELETE COMMAND
@@ -835,10 +851,10 @@ def main():
     app.add_handler(CommandHandler("unban", unban))
     app.add_handler(CommandHandler("banlist", banlist))
 
-    # Broadcast (main admin only)
+    # Broadcast
     app.add_handler(CommandHandler("broadcast", broadcast))
 
-    # Force join system
+    # Force join
     app.add_handler(CommandHandler("addforce", addforce))
     app.add_handler(CommandHandler("removeforce", removeforce))
     app.add_handler(CommandHandler("forcelist", forcelist))
@@ -850,17 +866,13 @@ def main():
     app.add_handler(CommandHandler("delcmd", delcmd))
     app.add_handler(CommandHandler("removefile", removefile))
 
-    # Collect command data (while creating)
-    app.add_handler(MessageHandler(
-        filters.ALL & ~filters.COMMAND,
-        collect_command_data
-    ))
+    # Support system
+    app.add_handler(CommandHandler("support", support))
 
-    # Custom command execution
-    app.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        custom_command_handler
-    ))
+    # Message handlers (ORDER MATTERS)
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
 
     print("🚀 BOT STARTED SUCCESSFULLY")
     app.run_polling()
@@ -868,4 +880,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
