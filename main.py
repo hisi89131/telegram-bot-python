@@ -221,6 +221,7 @@ async def adminpanel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = "🛠 Admin Panel\n\n"
 
+    # MAIN ADMIN COMMANDS
     if role == "main_admin":
         text += (
             "/addadmin USER_ID\n"
@@ -230,10 +231,32 @@ async def adminpanel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/ban USER_ID\n"
             "/unban USER_ID\n"
             "/banlist\n"
-            "/broadcast message\n"
+            "/broadcast (reply required)\n"
+            "\n"
+            "/addforce CHANNEL_ID EMOJI\n"
+            "/removeforce ADMIN_ID\n"
+            "/forcelist\n"
+            "\n"
+            "/set command_name\n"
+            "/done\n"
+            "/cmd\n"
+            "/delcmd command_name\n"
+            "/removefile command_name file_number\n"
         )
-    else:
-        text += "You have limited permissions."
+
+    # SUB ADMIN COMMANDS
+    elif role == "admin":
+        text += (
+            "/addforce CHANNEL_ID EMOJI\n"
+            "/removeforce\n"
+            "/forcelist\n"
+            "\n"
+            "/set command_name\n"
+            "/done\n"
+            "/cmd\n"
+            "/delcmd command_name\n"
+            "/removefile command_name file_number\n"
+        )
 
     await update.message.reply_text(text)
 
