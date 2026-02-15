@@ -223,7 +223,7 @@ async def userlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text)
     
-# -------- SUPPORT SYSTEM -------- #
+# -------- SUPPORT SYSTEM --------
 
 support_mode = {}
 
@@ -236,13 +236,17 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     support_mode[user_id] = True
     await update.message.reply_text("Send your support message now.")
 
+
 async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Admin replying to user
+    # 🔥 IMPORTANT FIX
+    if user_id in command_creation_mode:
+        return
+
+    # Admin reply
     if update.message.reply_to_message:
         replied_text = update.message.reply_to_message.text
-
         if replied_text and "Support Message From:" in replied_text:
             original_user_id = int(
                 replied_text.split("Support Message From:")[1]
@@ -266,7 +270,6 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await update.message.reply_text("Support message sent.")
-
 
 # --------- SET COMMAND SYSTEM ---------
 
