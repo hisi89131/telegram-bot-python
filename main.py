@@ -450,8 +450,14 @@ def main():
     app.add_handler(CommandHandler("set", set))
     app.add_handler(CommandHandler("done", done))
     app.add_handler(CommandHandler("delcmd", delcmd))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
+    # First collect data when creating command
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
+
+    # Then support message handler
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, support_message))
+
+    # Then custom commands
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
     print("Bot Running...")
     app.run_polling()
 
