@@ -30,6 +30,10 @@ support_warnings = {}
 
 tz = pytz.timezone(TIMEZONE)
 
+# -------- COMMAND STORAGE SYSTEM --------
+command_storage = {}
+command_creation_mode = {}
+COMMAND_EXPIRY_HOURS = 24
 
 # ---------- ROLE CHECK ---------- #
 
@@ -279,7 +283,107 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text("✅ Support message sent.")
 
+# --------- SET COMMAND SYSTEM ---------
 
+async def set(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    role = get_role(user_id)
+
+    if role not in ["main_admin", "admin"]:
+        await update.message.reply_text("❌ Access Denied")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /set command_name")
+        return
+
+    cmd_name = context.args[0].lower()
+
+    command_creation_mode[user_id] = {
+        "name": cmd_name,
+        "data": [],
+        "owner": user_id,
+        "time": datetime.datetime.now(tz)
+    }
+
+    await update.message.reply_text(
+        f"📦 Send files/text for /{cmd_name}\nWhen done type /done"
+    )
+async def collect_command_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id not in command_creation_mode:
+        return
+
+    command_creation_mode[user_id]["data"].append(update.message)
+
+    await update.message.reply_text("✅ Added")
+    
+# -------- DONE SYSTEM -------- #
+
+async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id not in command_creation_mode:
+        await update.message.reply_text("❌ You are not creating any command.")
+        return
+
+    cmd_data = command_creation_mode[user_id]
+    cmd_name = cmd_data["name"]
+
+    command_storage[cmd_name] = {
+        "data": cmd_data["data"],
+        "owner": cmd_data["owner"],
+        "time": cmd_data["time"]
+    }
+
+    del command_creation_mode[user_id]
+
+    await update.message.reply_text(f"✅ Command /{cmd_name} saved successfully!")
+
+    # Broadcast
+    for uid in users:
+        try:
+            await context.bot.send_message(
+                chat_id=uid,
+                text=f"🚀 Key '{cmd_name}' uploaded/updated successfully!"
+            )
+        except:
+            pass    
+            
+# -------- COMMAND RUNNER SYSTEM -------- #
+
+async def custom_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not update.message or not update.message.text:
+        return
+
+    cmd = update.message.text.replace("/", "").lower()
+
+    if cmd not in command_storage:
+        return
+
+    cmd_data = command_storage[cmd]
+
+    # Expiry check
+    now = datetime.datetime.now(tz)
+    if (now - cmd_data["time"]).total_seconds() > COMMAND_EXPIRY_HOURS * 3600:
+        del command_storage[cmd]
+        await update.message.reply_text("❌ This command expired.")
+        return
+
+    for msg in cmd_data["data"]:
+        try:
+            await msg.copy(update.effective_chat.id)
+        except:
+            pass
+
+    upload_time = cmd_data["time"].strftime("%d %b %Y | %I:%M %p IST")
+
+    await update.message.reply_text(
+        f"🔴 Uploaded At: {upload_time}"
+    )     
+    
 # ---------- CMD LIST ---------- #
 
 async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -306,31 +410,41 @@ async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text)
 
-
-# ---------- DELETE CUSTOM COMMAND ---------- #
+# -------- DELETE COMMAND --------
 
 async def delcmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_role(user_id)
 
+    # Command name missing
     if not context.args:
-        await update.message.reply_text("Usage: /delcmd COMMAND_NAME")
+        await update.message.reply_text("Usage: /delcmd command_name")
         return
 
-    cmd_name = context.args[0]
+    cmd_name = context.args[0].lower()
 
-    if cmd_name not in custom_commands:
-        await update.message.reply_text("Command not found.")
+    # Command not found
+    if cmd_name not in command_storage:
+        await update.message.reply_text("❌ Command not found.")
         return
 
-    owner = custom_commands[cmd_name]["owner"]
+    owner = command_storage[cmd_name]["owner"]
 
-    if role == "main_admin" or owner == user_id:
-        del custom_commands[cmd_name]
-        await update.message.reply_text(f"❌ Command /{cmd_name} deleted.")
-    else:
-        await update.message.reply_text("❌ You cannot delete this command.")
-        
+    # Main admin can delete any command
+    if role == "main_admin":
+        del command_storage[cmd_name]
+        await update.message.reply_text(f"❌ /{cmd_name} deleted successfully.")
+        return
+
+    # Sub admin can delete only their own command
+    if role == "admin" and owner == user_id:
+        del command_storage[cmd_name]
+        await update.message.reply_text(f"❌ /{cmd_name} deleted successfully.")
+        return
+
+    # Otherwise deny
+    await update.message.reply_text("❌ You cannot delete this command.")
+
 # ---------- MAIN ---------- #
 
 def main():
@@ -348,8 +462,11 @@ def main():
     app.add_handler(CommandHandler("userlist", userlist))
     app.add_handler(CommandHandler("support", support))
     app.add_handler(CommandHandler("cmd", cmd))
+    app.add_handler(CommandHandler("set", set))
+    app.add_handler(CommandHandler("done", done))
     app.add_handler(CommandHandler("delcmd", delcmd))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, support_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
     print("Bot Running...")
     app.run_polling()
 
