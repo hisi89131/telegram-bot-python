@@ -240,13 +240,14 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # 🔥 IMPORTANT FIX
+    # Ignore if creating command
     if user_id in command_creation_mode:
         return
 
-    # Admin reply
+    # 🔹 Admin replying to support
     if update.message.reply_to_message:
         replied_text = update.message.reply_to_message.text
+
         if replied_text and "Support Message From:" in replied_text:
             original_user_id = int(
                 replied_text.split("Support Message From:")[1]
@@ -256,11 +257,11 @@ async def support_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await context.bot.send_message(
                 chat_id=original_user_id,
-                text=f"Admin Reply:\n\n{update.message.text}"
+                text="Admin Reply:\n\n" + update.message.text
             )
             return
 
-    # User sending support
+    # 🔹 User sending support message
     if support_mode.get(user_id):
         support_mode[user_id] = False
 
@@ -453,13 +454,11 @@ def main():
     app.add_handler(CommandHandler("set", set))
     app.add_handler(CommandHandler("done", done))
     app.add_handler(CommandHandler("delcmd", delcmd))
-    # First collect data when creating command
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
-
-    # Then support message handler
+    # 🔥 FIRST support_message
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, support_message))
-
-    # Then custom commands
+    # फिर collect_command_data
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
+    # फिर custom commands
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
     print("Bot Running...")
     app.run_polling()
