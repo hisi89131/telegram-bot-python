@@ -1,284 +1,242 @@
-import telebot
-from telebot import types
-import sqlite3
-import re
-from datetime import datetime
-import pytz
+import logging
+import asyncio
+from datetime import datetime, timedelta
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
 
-BOT_TOKEN = "8232988598:AAEbHhLemS_ucAdLmPpLLQOWMzvbb0P0Oas"
+TOKEN = "8232988598:AAGDs4P58C4lmo9nyOi_TJoAYJdjsnqRmTQ"
 MAIN_ADMIN = 1086634832
-MAIN_CHANNEL = "@loader0fficial"
+MAIN_FORCE_CHANNEL = "@loader0fficial"
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
+logging.basicConfig(level=logging.INFO)
 
-conn = sqlite3.connect("bot.db", check_same_thread=False)
-cur = conn.cursor()
+users = {}
+banned_users = set()
+admins = set()
+admin_banlist = set()
+custom_commands = {}
+force_channels = {MAIN_FORCE_CHANNEL}
 
-# ================= DATABASE =================
 
-cur.execute("CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, username TEXT)")
-cur.execute("CREATE TABLE IF NOT EXISTS admins (user_id TEXT PRIMARY KEY)")
-cur.execute("CREATE TABLE IF NOT EXISTS banned (user_id TEXT PRIMARY KEY)")
-cur.execute("CREATE TABLE IF NOT EXISTS force_groups (chat_id TEXT PRIMARY KEY)")
-cur.execute("CREATE TABLE IF NOT EXISTS commands (name TEXT PRIMARY KEY, upload_time TEXT)")
-cur.execute("""CREATE TABLE IF NOT EXISTS files(
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-command_name TEXT,
-file_id TEXT,
-file_type TEXT,
-caption TEXT
-)""")
-cur.execute("""CREATE TABLE IF NOT EXISTS support_map(
-admin_msg_id TEXT PRIMARY KEY,
-user_id TEXT
-)""")
+# ---------------- FORCE JOIN CHECK ---------------- #
 
-conn.commit()
-cur.execute("INSERT OR IGNORE INTO admins VALUES(?)",(str(MAIN_ADMIN),))
-conn.commit()
-
-# ================= UTIL =================
-
-def ist():
-    tz = pytz.timezone("Asia/Kolkata")
-    return datetime.now(tz).strftime("%d-%m-%Y %H:%M")
-
-def clean(text):
-    if not text:
-        return None
-    text = re.sub(r"http\S+","",text)
-    text = re.sub(r"@\w+","🔰",text)
-    return text.strip()
-
-def is_admin(uid):
-    cur.execute("SELECT 1 FROM admins WHERE user_id=?",(uid,))
-    return cur.fetchone() is not None
-
-def is_banned(uid):
-    cur.execute("SELECT 1 FROM banned WHERE user_id=?",(uid,))
-    return cur.fetchone() is not None
-
-def joined(uid):
-    groups=[MAIN_CHANNEL]
-    cur.execute("SELECT chat_id FROM force_groups")
-    groups+=[g[0] for g in cur.fetchall()]
-    for g in groups:
+async def is_joined(user_id, context):
+    for channel in force_channels:
         try:
-            st=bot.get_chat_member(g,int(uid)).status
-            if st not in ["member","administrator","creator"]:
+            member = await context.bot.get_chat_member(channel, user_id)
+            if member.status in ["left", "kicked"]:
                 return False
         except:
             return False
     return True
 
-def join_markup():
-    mk=types.InlineKeyboardMarkup()
-    groups=[MAIN_CHANNEL]
-    cur.execute("SELECT chat_id FROM force_groups")
-    groups+=[g[0] for g in cur.fetchall()]
-    for g in groups:
-        link=f"https://t.me/{g.replace('@','')}"
-        mk.add(types.InlineKeyboardButton("Join Group",url=link))
-    mk.add(types.InlineKeyboardButton("Verify ✅",callback_data="verify"))
-    return mk
 
-# ================= START =================
+async def force_join_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    buttons = []
+    for ch in force_channels:
+        buttons.append([InlineKeyboardButton("Join Channel", url=f"https://t.me/{ch.replace('@','')}")])
+    buttons.append([InlineKeyboardButton("Verify", callback_data="verify")])
+    reply = InlineKeyboardMarkup(buttons)
+    await update.message.reply_text("पहले सभी चैनल जॉइन करो और Verify करो.", reply_markup=reply)
 
-@bot.message_handler(commands=["start"])
-def start(m):
-    uid=str(m.from_user.id)
-    if is_banned(uid):
-        return
-    cur.execute("INSERT OR IGNORE INTO users VALUES(?,?)",(uid,m.from_user.username))
-    conn.commit()
-    if not joined(uid):
-        bot.send_message(m.chat.id,"Join required groups",reply_markup=join_markup())
-        return
-    bot.send_message(m.chat.id,"Verified ✅\nUse /cmd")
 
-@bot.callback_query_handler(func=lambda c:c.data=="verify")
-def verify(c):
-    if joined(str(c.from_user.id)):
-        bot.edit_message_text("Verified ✅\nUse /cmd",c.message.chat.id,c.message.message_id)
+async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    if await is_joined(user_id, context):
+        await query.answer("Verified ✅", show_alert=True)
+        await query.message.edit_text("अब आप /cmd से कमांड देख सकते हो.")
     else:
-        bot.answer_callback_query(c.id,"Join all groups")
+        await query.answer("पहले जॉइन करो ❌", show_alert=True)
 
-# ================= CMD =================
 
-@bot.message_handler(commands=["cmd"])
-def panel(m):
-    uid=str(m.from_user.id)
-    if is_banned(uid):
+# ---------------- START ---------------- #
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id in banned_users:
         return
 
-    if is_admin(uid):
-        text="""👑 Admin Panel
+    if not await is_joined(user_id, context):
+        await force_join_message(update, context)
+        return
 
-/set name
-/done
-/edit name
-/deletecmd name
-/ban id
-/unban id
-/banlist
-/userlist
-/addforce @group
-/delforce @group
-/support message
-/cmd
-"""
-    else:
-        if not joined(uid):
-            bot.send_message(m.chat.id,"Join required groups",reply_markup=join_markup())
+    users[user_id] = update.effective_user.username
+    await update.message.reply_text("Welcome! Use /cmd")
+
+
+# ---------------- CMD ---------------- #
+
+async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if not await is_joined(user_id, context):
+        await force_join_message(update, context)
+        return
+
+    text = "Available Commands:\n"
+    for cmd_name in custom_commands:
+        if custom_commands[cmd_name]["owner"] == user_id or user_id == MAIN_ADMIN:
+            text += f"/{cmd_name}\n"
+
+    text += "\n/support"
+    await update.message.reply_text(text)
+
+
+# ---------------- SUPPORT ---------------- #
+
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("अपना मैसेज भेजो।")
+    context.user_data["support"] = True
+
+
+async def support_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("support"):
+        await context.bot.send_message(MAIN_ADMIN, f"Support from {update.effective_user.id}:\n{update.message.text}")
+        await update.message.reply_text("Support Sent ✅")
+        context.user_data["support"] = False
+
+
+# ---------------- ADMIN ---------------- #
+
+async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN:
+        return
+    user_id = int(context.args[0])
+    admins.add(user_id)
+    await update.message.reply_text("Admin Added")
+
+
+async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN:
+        return
+    user_id = int(context.args[0])
+    admins.discard(user_id)
+    await update.message.reply_text("Admin Removed")
+
+
+async def adminlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = "Admins:\n"
+    for a in admins:
+        text += f"{a}\n"
+    await update.message.reply_text(text)
+
+
+# ---------------- USER BAN ---------------- #
+
+async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN:
+        return
+    user_id = int(context.args[0])
+    banned_users.add(user_id)
+    await update.message.reply_text("User Banned")
+
+
+async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MAIN_ADMIN:
+        return
+    user_id = int(context.args[0])
+    banned_users.discard(user_id)
+    await update.message.reply_text("User Unbanned")
+
+
+async def banlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = "Banned Users:\n"
+    for u in banned_users:
+        text += f"{u}\n"
+    await update.message.reply_text(text)
+
+
+# ---------------- CUSTOM COMMAND CREATE ---------------- #
+
+async def set_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != MAIN_ADMIN and user_id not in admins:
+        return
+
+    cmd_name = context.args[0]
+    custom_commands[cmd_name] = {
+        "owner": user_id,
+        "content": [],
+        "created": datetime.now(),
+    }
+
+    context.user_data["creating"] = cmd_name
+    await update.message.reply_text("अब फाइल/मैसेज भेजो, फिर /done")
+
+
+async def save_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cmd_name = context.user_data.get("creating")
+    if cmd_name:
+        custom_commands[cmd_name]["content"].append(update.message.text)
+        await update.message.reply_text("Saved")
+
+
+async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cmd_name = context.user_data.get("creating")
+    if not cmd_name:
+        return
+    custom_commands[cmd_name]["created"] = datetime.now()
+    context.user_data["creating"] = None
+
+    for u in users:
+        try:
+            await context.bot.send_message(u, "New Command Added! Check /cmd")
+        except:
+            pass
+
+    await update.message.reply_text("Command Saved ✅")
+
+
+# ---------------- EXECUTE CUSTOM ---------------- #
+
+async def execute_custom(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cmd_name = update.message.text.replace("/", "")
+    if cmd_name in custom_commands:
+        data = custom_commands[cmd_name]
+        if datetime.now() > data["created"] + timedelta(hours=24):
+            del custom_commands[cmd_name]
+            await update.message.reply_text("Command Expired ❌")
             return
-        cur.execute("SELECT name FROM commands")
-        cmds=cur.fetchall()
-        text="📦 Available Commands:\n\n"
-        for c in cmds:
-            text+=f"/{c[0]}\n"
-        text+="\n/support message\n/cmd"
 
-    bot.send_message(m.chat.id,text)
+        for msg in data["content"]:
+            await update.message.reply_text(msg)
 
-# ================= BAN =================
+        await update.message.reply_text(f"Uploaded Time: {data['created']}")
 
-@bot.message_handler(commands=["ban"])
-def ban(m):
-    if not is_admin(str(m.from_user.id)):
-        return
-    try:
-        uid=m.text.split()[1]
-        cur.execute("INSERT OR IGNORE INTO banned VALUES(?)",(uid,))
-        conn.commit()
-        bot.send_message(m.chat.id,"User banned")
-    except:
-        bot.send_message(m.chat.id,"Usage: /ban id")
 
-@bot.message_handler(commands=["unban"])
-def unban(m):
-    if not is_admin(str(m.from_user.id)):
-        return
-    try:
-        uid=m.text.split()[1]
-        cur.execute("DELETE FROM banned WHERE user_id=?",(uid,))
-        conn.commit()
-        bot.send_message(m.chat.id,"User unbanned")
-    except:
-        bot.send_message(m.chat.id,"Usage: /unban id")
+# ---------------- MAIN ---------------- #
 
-@bot.message_handler(commands=["banlist"])
-def banlist(m):
-    if not is_admin(str(m.from_user.id)):
-        return
-    cur.execute("SELECT user_id FROM banned")
-    users=cur.fetchall()
-    text="Banned Users:\n\n"
-    for u in users:
-        text+=f"{u[0]}\n"
-    bot.send_message(m.chat.id,text)
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-@bot.message_handler(commands=["userlist"])
-def userlist(m):
-    if not is_admin(str(m.from_user.id)):
-        return
-    cur.execute("SELECT user_id,username FROM users")
-    users=cur.fetchall()
-    text=f"Total Users: {len(users)}\n\n"
-    for u in users:
-        if u[1]:
-            text+=f"@{u[1]} (ID:{u[0]})\n"
-        else:
-            text+=f"ID:{u[0]}\n"
-    bot.send_message(m.chat.id,text[:4000])
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("cmd", cmd))
+    app.add_handler(CommandHandler("support", support))
+    app.add_handler(CommandHandler("addadmin", addadmin))
+    app.add_handler(CommandHandler("removeadmin", removeadmin))
+    app.add_handler(CommandHandler("adminlist", adminlist))
+    app.add_handler(CommandHandler("ban", ban))
+    app.add_handler(CommandHandler("unban", unban))
+    app.add_handler(CommandHandler("banlist", banlist))
+    app.add_handler(CommandHandler("set", set_command))
+    app.add_handler(CommandHandler("done", done))
 
-# ================= SET SYSTEM =================
+    app.add_handler(CallbackQueryHandler(verify_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_content))
+    app.add_handler(MessageHandler(filters.TEXT & filters.COMMAND, execute_custom))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, support_forward))
 
-current_set={}
+    app.run_polling()
 
-@bot.message_handler(commands=["set"])
-def set_cmd(m):
-    uid=str(m.from_user.id)
-    if not is_admin(uid):
-        return
-    try:
-        name=m.text.split()[1]
-        current_set[uid]=name
-        cur.execute("INSERT OR REPLACE INTO commands VALUES(?,?)",(name,""))
-        cur.execute("DELETE FROM files WHERE command_name=?",(name,))
-        conn.commit()
-        bot.send_message(m.chat.id,"Send files then /done")
-    except:
-        bot.send_message(m.chat.id,"Usage: /set name")
 
-@bot.message_handler(content_types=["document","photo","video","audio"])
-def save_file(m):
-    uid=str(m.from_user.id)
-    if uid not in current_set:
-        return
-    cmd=current_set[uid]
-
-    if m.document:
-        fid=m.document.file_id
-        ftype="document"
-    elif m.photo:
-        fid=m.photo[-1].file_id
-        ftype="photo"
-    elif m.video:
-        fid=m.video.file_id
-        ftype="video"
-    elif m.audio:
-        fid=m.audio.file_id
-        ftype="audio"
-    else:
-        return
-
-    cap=clean(m.caption)
-
-    cur.execute("INSERT INTO files(command_name,file_id,file_type,caption) VALUES(?,?,?,?)",
-                (cmd,fid,ftype,cap))
-    conn.commit()
-
-@bot.message_handler(commands=["done"])
-def done(m):
-    uid=str(m.from_user.id)
-    if uid not in current_set:
-        return
-    cmd=current_set[uid]
-    cur.execute("UPDATE commands SET upload_time=? WHERE name=?",(ist(),cmd))
-    conn.commit()
-    del current_set[uid]
-    bot.send_message(m.chat.id,"Saved & Updated")
-
-# ================= DYNAMIC COMMAND =================
-
-@bot.message_handler(func=lambda m: m.text and m.text.startswith("/"))
-def dynamic(m):
-    cmd=m.text[1:]
-
-    builtins=["start","cmd","set","done","edit","deletecmd","ban","unban","banlist","userlist","addforce","delforce","support"]
-
-    if cmd in builtins:
-        return
-
-    cur.execute("SELECT upload_time FROM commands WHERE name=?",(cmd,))
-    row=cur.fetchone()
-    if not row:
-        return
-
-    cur.execute("SELECT file_id,file_type,caption FROM files WHERE command_name=?",(cmd,))
-    files=cur.fetchall()
-
-    for f in files:
-        if f[1]=="document":
-            bot.send_document(m.chat.id,f[0],caption=f[2])
-        elif f[1]=="photo":
-            bot.send_photo(m.chat.id,f[0],caption=f[2])
-        elif f[1]=="video":
-            bot.send_video(m.chat.id,f[0],caption=f[2])
-        elif f[1]=="audio":
-            bot.send_audio(m.chat.id,f[0],caption=f[2])
-
-    bot.send_message(m.chat.id,f"Uploaded: {row[0]}")
-
-print("Bot Running...")
-bot.infinity_polling()
+if __name__ == "__main__":
+    main()
