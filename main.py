@@ -802,7 +802,7 @@ def main():
     app.add_handler(CommandHandler("forcelist", forcelist))
 
     # Custom command system
-    app.add_handler(CommandHandler("setcmd", setcmd))
+    app.add_handler(CommandHandler("set", set))
     app.add_handler(CommandHandler("done", done))
     app.add_handler(CommandHandler("cmd", cmd))
     app.add_handler(CommandHandler("delcmd", delcmd))
