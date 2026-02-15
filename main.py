@@ -333,11 +333,16 @@ async def userlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = f"👥 Total Users: {len(users)}\n\n"
+
     for u in users:
-        text += f"{u}\n"
+        try:
+            user_obj = await context.bot.get_chat(u)
+            username = f"@{user_obj.username}" if user_obj.username else "No Username"
+            text += f"{u} | {username}\n"
+        except:
+            text += f"{u}\n"
 
     await update.message.reply_text(text)
-
 
 # Ban User
 async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -547,8 +552,16 @@ async def forcelist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 # ==========================================
-# STAGE 8 - CUSTOM COMMAND CREATION SYSTEM
+# STAGE 8 - CUSTOM COMMAND CREATION SYSTEM (UPDATED)
 # ==========================================
+
+def clean_text(text):
+    if not text:
+        return None
+    text = re.sub(r'@\w+', '', text)  # remove usernames
+    text = re.sub(r'http\S+', '', text)  # remove links
+    return text.strip()
+
 
 async def set(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -581,21 +594,32 @@ async def collect_command_data(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     msg = update.message
-    role = get_role(user_id)
 
-    # ALWAYS remove forward source for everyone
-    msg.forward_date = None
-    msg.forward_from = None
-    msg.forward_from_chat = None
+    file_data = {}
 
-    # Remove usernames & links if sub admin
-    if role == "admin":
-        if msg.caption:
-            msg.caption = msg.caption.replace("@", "")
-        if msg.text:
-            msg.text = msg.text.replace("@", "")
+    if msg.text:
+        file_data["type"] = "text"
+        file_data["content"] = clean_text(msg.text)
 
-    command_creation_mode[user_id]["files"].append(msg)
+    elif msg.photo:
+        file_data["type"] = "photo"
+        file_data["file_id"] = msg.photo[-1].file_id
+        file_data["caption"] = clean_text(msg.caption)
+
+    elif msg.document:
+        file_data["type"] = "document"
+        file_data["file_id"] = msg.document.file_id
+        file_data["caption"] = clean_text(msg.caption)
+
+    elif msg.video:
+        file_data["type"] = "video"
+        file_data["file_id"] = msg.video.file_id
+        file_data["caption"] = clean_text(msg.caption)
+
+    else:
+        return
+
+    command_creation_mode[user_id]["files"].append(file_data)
     await update.message.reply_text("✅ Added")
 
 
@@ -621,57 +645,35 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"✅ Command /{cmd_name} saved successfully!")
 
-    # Broadcast
+    # 🔥 FULL CONTENT BROADCAST
     for uid in users:
         if uid in banned_users:
             continue
-        try:
-            await context.bot.send_message(
-                uid,
-                f"🚀 Key '{cmd_name}' uploaded/updated successfully!"
-            )
-        except:
-            pass
+        for file in command_storage[cmd_name]["files"]:
+            try:
+                if file["type"] == "text":
+                    await context.bot.send_message(uid, file["content"])
 
-    for gid in groups:
-        try:
-            await context.bot.send_message(
-                gid,
-                f"🚀 Key '{cmd_name}' uploaded/updated successfully!"
-            )
-        except:
-            pass
+                elif file["type"] == "photo":
+                    await context.bot.send_photo(uid, file["file_id"], caption=file["caption"])
+
+                elif file["type"] == "document":
+                    await context.bot.send_document(uid, file["file_id"], caption=file["caption"])
+
+                elif file["type"] == "video":
+                    await context.bot.send_video(uid, file["file_id"], caption=file["caption"])
+
+            except:
+                pass
+
+        await context.bot.send_message(uid, f"📅 Uploaded On:\n{ist_time}")
+
 
 # ==========================================
-# STAGE 9 - CUSTOM COMMAND EXECUTION SYSTEM
+# STAGE 9 - CUSTOM COMMAND EXECUTION (UPDATED)
 # ==========================================
-
-async def cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    role = get_role(user_id)
-
-    if not command_storage:
-        await update.message.reply_text("No Commands Available.")
-        return
-
-    text = "📜 Available Commands:\n\n"
-
-    for name, data in command_storage.items():
-        if role == "admin" and data["owner"] != user_id:
-            continue
-        text += f"/{name}\n"
-
-    if text.strip() == "📜 Available Commands:":
-        await update.message.reply_text("No Commands Available For You.")
-        return
-
-    await update.message.reply_text(text)
-
 
 async def custom_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    role = get_role(user_id)
-
     if not update.message.text:
         return
 
@@ -682,35 +684,19 @@ async def custom_command_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     data = command_storage[cmd_name]
 
-    if role == "admin" and data["owner"] != user_id:
-        await update.message.reply_text("❌ You cannot access this command.")
-        return
-
-    for msg in data["files"]:
+    for file in data["files"]:
         try:
-            if msg.text:
-                await context.bot.send_message(update.effective_chat.id, msg.text)
+            if file["type"] == "text":
+                await context.bot.send_message(update.effective_chat.id, file["content"])
 
-            elif msg.photo:
-                await context.bot.send_photo(
-                    update.effective_chat.id,
-                    msg.photo[-1].file_id,
-                    caption=msg.caption
-                )
+            elif file["type"] == "photo":
+                await context.bot.send_photo(update.effective_chat.id, file["file_id"], caption=file["caption"])
 
-            elif msg.document:
-                await context.bot.send_document(
-                    update.effective_chat.id,
-                    msg.document.file_id,
-                    caption=msg.caption
-                )
+            elif file["type"] == "document":
+                await context.bot.send_document(update.effective_chat.id, file["file_id"], caption=file["caption"])
 
-            elif msg.video:
-                await context.bot.send_video(
-                    update.effective_chat.id,
-                    msg.video.file_id,
-                    caption=msg.caption
-                )
+            elif file["type"] == "video":
+                await context.bot.send_video(update.effective_chat.id, file["file_id"], caption=file["caption"])
 
         except:
             pass
@@ -719,8 +705,7 @@ async def custom_command_handler(update: Update, context: ContextTypes.DEFAULT_T
         update.effective_chat.id,
         f"📅 Uploaded On:\n{data['time']}"
     )
-
-
+    
 # ==========================================
 # DELETE COMMAND
 # ==========================================
@@ -790,6 +775,40 @@ async def removefile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except:
         await update.message.reply_text("❌ Invalid input.")
+
+# ==========================================
+# STAGE 10 - SUPPORT SYSTEM
+# ==========================================
+
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if is_banned(user_id):
+        await update.message.reply_text("❌ You are banned.")
+        return
+
+    support_mode[user_id] = True
+    await update.message.reply_text("✍ Send your issue. Admin will receive it.")
+
+
+async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id not in support_mode:
+        return
+
+    message_text = update.message.text
+
+    try:
+        await context.bot.send_message(
+            MAIN_ADMIN_ID,
+            f"📩 Support Message\n\nFrom: {user_id}\n\n{message_text}"
+        )
+        await update.message.reply_text("✅ Your message has been sent to Admin.")
+    except:
+        await update.message.reply_text("❌ Failed to send message.")
+
+    del support_mode[user_id]
 
 # ==========================================
 # FINAL STAGE - HANDLER REGISTRATION
