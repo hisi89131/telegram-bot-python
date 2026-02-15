@@ -786,7 +786,7 @@ def main():
     app.add_handler(CommandHandler("adminlist", adminlist))
 
     # User tracking
-    app.add_handler(CommandHandler("users", users_list))
+    app.add_handler(CommandHandler("users", userlist))
 
     # Ban system
     app.add_handler(CommandHandler("ban", ban))
