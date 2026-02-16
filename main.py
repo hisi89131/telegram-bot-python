@@ -803,11 +803,15 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     support_mode[user_id] = True
     await update.message.reply_text("✍ Send your issue. Admin will receive it.")
 
-
 async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
+    # Only work if user is in support mode
     if user_id not in support_mode:
+        return
+
+    # Ignore commands
+    if update.message.text and update.message.text.startswith("/"):
         return
 
     message_text = update.message.text
@@ -822,6 +826,7 @@ async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Failed to send message.")
 
     del support_mode[user_id]
+
     
 async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -903,7 +908,7 @@ def main():
     app.add_handler(MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, handle_admin_reply))
 
     # 2️⃣ Support system messages
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.User(list(support_mode.keys())), handle_support))
 
     # 3️⃣ Custom command creation collector
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
