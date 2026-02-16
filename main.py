@@ -596,43 +596,42 @@ async def set(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def collect_command_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Only work if user is creating command
     if user_id not in command_creation_mode:
         return
 
     msg = update.message
-
     file_data = {}
 
+    # TEXT
     if msg.text and not msg.text.startswith("/"):
         cleaned = clean_text(msg.text)
-        if cleaned:
-           file_data["type"] = "text"
-           file_data["content"] = cleaned
-    else:
-        return
+        if cleaned is not None:
+            file_data["type"] = "text"
+            file_data["content"] = cleaned
 
+    # PHOTO
     elif msg.photo:
         file_data["type"] = "photo"
         file_data["file_id"] = msg.photo[-1].file_id
         caption = clean_text(msg.caption)
         file_data["caption"] = caption if caption else None
 
+    # DOCUMENT
     elif msg.document:
         file_data["type"] = "document"
         file_data["file_id"] = msg.document.file_id
         caption = clean_text(msg.caption)
         file_data["caption"] = caption if caption else None
 
+    # VIDEO
     elif msg.video:
         file_data["type"] = "video"
         file_data["file_id"] = msg.video.file_id
         caption = clean_text(msg.caption)
         file_data["caption"] = caption if caption else None
-    
 
-    if not file_data:
-    return
+    else:
+        return
 
     command_creation_mode[user_id]["files"].append(file_data)
     await update.message.reply_text("✅ Added")
@@ -797,7 +796,7 @@ async def removefile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Invalid input.")
 
 # ==========================================
-# STAGE 10 - SUPPORT SYSTEM
+# STAGE 10 - SUPPORT SYSTEM (FIXED)
 # ==========================================
 
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -811,8 +810,16 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✍ Send your issue. Admin will receive it.")
 
 
+async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
 
-    # Ignore commands
+    # Ignore if creating command
+    if user_id in command_creation_mode:
+        return
+
+    if user_id not in support_mode:
+        return
+
     if update.message.text and update.message.text.startswith("/"):
         return
 
@@ -829,20 +836,10 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     del support_mode[user_id]
 
-    
+
 async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not update.message
-    
-async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    # 🔥 FIX
-    if user_id in command_creation_mode:
-        return
-
-    if user_id not in support_mode:
-        returnreply_to_message:
+    if not update.message.reply_to_message:
         return
 
     if update.effective_user.id != MAIN_ADMIN_ID:
@@ -850,10 +847,7 @@ async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     original_text = update.message.reply_to_message.text
 
-    if not original_text:
-        return
-
-    if "From:" not in original_text:
+    if not original_text or "From:" not in original_text:
         return
 
     try:
