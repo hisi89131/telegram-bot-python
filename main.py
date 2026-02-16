@@ -605,30 +605,37 @@ async def collect_command_data(update: Update, context: ContextTypes.DEFAULT_TYP
     file_data = {}
 
     if msg.text and not msg.text.startswith("/"):
-        file_data["type"] = "text"
-        file_data["content"] = clean_text(msg.text)
+        cleaned = clean_text(msg.text)
+        if cleaned:
+           file_data["type"] = "text"
+           file_data["content"] = cleaned
+    else:
+        return
 
     elif msg.photo:
         file_data["type"] = "photo"
         file_data["file_id"] = msg.photo[-1].file_id
-        file_data["caption"] = clean_text(msg.caption)
+        caption = clean_text(msg.caption)
+        file_data["caption"] = caption if caption else None
 
     elif msg.document:
         file_data["type"] = "document"
         file_data["file_id"] = msg.document.file_id
-        file_data["caption"] = clean_text(msg.caption)
+        caption = clean_text(msg.caption)
+        file_data["caption"] = caption if caption else None
 
     elif msg.video:
         file_data["type"] = "video"
         file_data["file_id"] = msg.video.file_id
-        file_data["caption"] = clean_text(msg.caption)
+        caption = clean_text(msg.caption)
+        file_data["caption"] = caption if caption else None
+    
 
-    else:
-        return
+    if not file_data:
+    return
 
     command_creation_mode[user_id]["files"].append(file_data)
     await update.message.reply_text("✅ Added")
-
 
 
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -803,12 +810,7 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     support_mode[user_id] = True
     await update.message.reply_text("✍ Send your issue. Admin will receive it.")
 
-async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
 
-    # Only work if user is in support mode
-    if user_id not in support_mode:
-        return
 
     # Ignore commands
     if update.message.text and update.message.text.startswith("/"):
@@ -830,7 +832,17 @@ async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not update.message.reply_to_message:
+    if not update.message
+    
+async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    # 🔥 FIX
+    if user_id in command_creation_mode:
+        return
+
+    if user_id not in support_mode:
+        returnreply_to_message:
         return
 
     if update.effective_user.id != MAIN_ADMIN_ID:
@@ -900,25 +912,17 @@ def main():
     # Support system
     app.add_handler(CommandHandler("support", support))
 
-    # ==================================================
-    # FIXED MESSAGE HANDLER ORDER
-    # ==================================================
-
-    # 1️⃣ Admin reply to support (FIRST priority)
+    # 1️⃣ Admin reply (FIRST)
     app.add_handler(MessageHandler(filters.REPLY & filters.TEXT & ~filters.COMMAND, handle_admin_reply))
 
-    # 2️⃣ Support system messages
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.User(list(support_mode.keys())), handle_support))
-
-    # 3️⃣ Custom command creation collector
+    # 2️⃣ Command creation collector (VERY IMPORTANT)
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
-    
-    # 4️⃣ Custom command execution (LAST priority)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
-    
-    
 
-    
+    # 3️⃣ Custom command execution
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
+
+    # 4️⃣ Support system (LAST)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support))
 
     print("🚀 BOT STARTED SUCCESSFULLY")
     app.run_polling()
