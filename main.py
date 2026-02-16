@@ -796,7 +796,7 @@ async def removefile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Invalid input.")
 
 # ==========================================
-# STAGE 10 - SUPPORT SYSTEM (FIXED)
+# STAGE 10 - SUPPORT SYSTEM (CLEAN FIX)
 # ==========================================
 
 async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -807,19 +807,17 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     support_mode[user_id] = True
-    await update.message.reply_text("✍ Send your issue. Admin will receive it.")
+    await update.message.reply_text("✍ Send your issue now.")
 
 
 async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Ignore if creating command
-    if user_id in command_creation_mode:
-        return
-
+    # If not in support mode → ignore
     if user_id not in support_mode:
         return
 
+    # Ignore commands
     if update.message.text and update.message.text.startswith("/"):
         return
 
@@ -830,10 +828,12 @@ async def handle_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
             MAIN_ADMIN_ID,
             f"📩 Support Message\n\nFrom: {user_id}\n\n{message_text}"
         )
-        await update.message.reply_text("✅ Your message has been sent to Admin.")
+
+        await update.message.reply_text("✅ Message sent to Admin.")
     except:
         await update.message.reply_text("❌ Failed to send message.")
 
+    # Remove user from support mode
     del support_mode[user_id]
 
 
@@ -862,6 +862,7 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     except:
         pass
+
         
 # ==========================================
 # FINAL STAGE - HANDLER REGISTRATION
