@@ -2,6 +2,7 @@
 # STAGE 1 - CORE SETUP (PRODUCTION BASE)
 # ==========================================
 
+import os
 import datetime
 import re
 from telegram import (
@@ -22,7 +23,7 @@ from telegram.ext import (
 # BOT CONFIG
 # ==============================
 
-BOT_TOKEN = "8531299371:AAF3qeyWj8RuQ5Nq7eK12CdNE7x9hJHv1Oc"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 MAIN_ADMIN_ID = 1086634832
 
 # IST Timezone
