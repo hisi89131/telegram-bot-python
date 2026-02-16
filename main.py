@@ -727,8 +727,8 @@ async def delcmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_role(user_id)
 
-    if not can_use_admin_panel(user_id):
-        await update.message.reply_text("❌ Admin Only.")
+    if user_id != MAIN_ADMIN_ID:
+        await update.message.reply_text("❌ Main Admin Only.")
         return
 
     if not context.args:
@@ -757,8 +757,8 @@ async def removefile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role = get_role(user_id)
 
-    if not can_use_admin_panel(user_id):
-        await update.message.reply_text("❌ Admin Only.")
+    if user_id != MAIN_ADMIN_ID:
+        await update.message.reply_text("❌ Main Admin Only.")
         return
 
     if len(context.args) < 2:
@@ -904,12 +904,14 @@ def main():
 
     # 2️⃣ Support system messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_support))
+
+    # 3️⃣ Custom command creation collector
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
     
     # 4️⃣ Custom command execution (LAST priority)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_command_handler))
     
-    # 3️⃣ Custom command creation collector
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, collect_command_data))
+    
 
     
 
